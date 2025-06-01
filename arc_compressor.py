@@ -22,9 +22,9 @@ class ARCCompressor:
     share_down_dim = 8
     decoding_dim = 4
     softmax_dim = 2
-    cummax_dim = 4
-    shift_dim = 4
-    nonlinear_dim = 16
+    cummax_dim = 8
+    shift_dim = 8
+    nonlinear_dim = 26
 
     # This function gives the channel dimension of the residual stream depending on
     # which dimensions are present, for every tensor in the multitensor.

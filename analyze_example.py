@@ -14,7 +14,35 @@ import multitensor_systems
 import layers
 import solution_selection
 import visualization
+import sys
 
+possible_pypaths = [
+    '/kaggle/input/3-28arcdsl'
+    '/kaggle/input/3-28arcdsl/forpopper2',
+    '/kaggle/input/3-28arcdsl/bateson',
+    '/Users/zhangdexiang/github/VSAHDC/arcv2',
+    '/Users/zhangdexiang/github/VSAHDC/arcv2/forpopper2',
+    '/Users/zhangdexiang/github/VSAHDC',
+    '/home/zdx/github/VSAHDC/arcv2',
+    '/home/zdx/github/VSAHDC/arcv2/forpopper2',
+    '/home/zdx/github/VSAHDC',
+    '/home/zdx/github/VSAHDC/arcMrule',
+    '/home/zdx/github/VSAHDC/arcMrule/diffstar',
+    '/another/path/to/check'
+]
+
+# 遍历路径列表，检查并按需加载
+for path in possible_pypaths:
+    if os.path.exists(path):
+        print(f"Adding path to sys.path: {path}")
+        sys.path.append(path)
+    else:
+        print(f"Path does not exist, skipping: {path}")
+
+# 打印最终的 sys.path 以确认结果
+print("Current sys.path:")
+for p in sys.path:
+    print(p)
 
 """
 This file allows you to train one model on one task, and see plots of what
@@ -58,12 +86,12 @@ if __name__ == "__main__":
     visualization.plot_problem(train_history_logger)
 
     # Perform training for 1500 iterations
-    n_iterations = 1500
+    n_iterations = 100
     for train_step in tqdm(range(n_iterations)):
         train.take_step(task, model, optimizer, train_step, train_history_logger)
 
         # Plot solutions every 50 steps
-        if (train_step+1) % 50 == 0:
+        if (train_step+1) % 99 == 0:
             visualization.plot_solution(train_history_logger,
                 fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.png')
             visualization.plot_solution(train_history_logger,

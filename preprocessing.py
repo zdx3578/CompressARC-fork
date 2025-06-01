@@ -19,6 +19,10 @@ class Task:
         self.n_examples = self.n_train + self.n_test
         self.unprocessed_problem = problem
 
+        self.input_obj_dicts,  self.output_obj_dicts  = [], []
+        self.input_obj_masks,  self.output_obj_masks  = [], []
+        self.input_obj_attrs,  self.output_obj_attrs  = [], []
+
         self.shapes = self._collect_problem_shapes(problem)
         self._predict_solution_shapes()
         self._construct_multitensor_system(problem)
@@ -28,6 +32,8 @@ class Task:
         self.solution = self._create_solution_tensor(solution) if solution else None
         if solution is None:
             self.solution_hash = None
+
+
 
     def _collect_problem_shapes(self, problem):
         """
@@ -92,7 +98,7 @@ class Task:
             self.n_examples, self.n_colors, self.n_x, self.n_y, self
         )
 
-    def _create_problem_tensor(self, problem):
+    def _create_problem_tensor000(self, problem):
         """
         Convert input/output grids to tensors.
         """
@@ -109,10 +115,88 @@ class Task:
                     grid = self._create_grid_tensor(
                         example.get(mode, np.zeros(self.shapes[new_example_num][1]))
                     )
+
+                    # ---------- ① input / output 都抽对象 ----------
+                    from utils.object_adapter import extract_objects_from_grid
+
+                    obj_d, obj_m, obj_a = extract_objects_from_grid(
+                        grid=np.array(example[mode]),
+                        pair_id=new_example_num,
+                        in_or_out=mode
+                    )
+                    # 根据 mode 写入不同列表
+                    if mode == 'input':
+                        self.input_obj_dicts.append(obj_d)
+                        self.input_obj_masks.append(obj_m)
+                        self.input_obj_attrs.append(obj_a)
+                    else:  # output
+                        self.output_obj_dicts.append(obj_d)
+                        self.output_obj_masks.append(obj_m)
+                        self.output_obj_attrs.append(obj_a)
+
+
                     mode_num = 0 if mode == 'input' else 1
                     self.problem[new_example_num, :, :grid.shape[1], :grid.shape[2], mode_num] = grid
 
         self.problem = torch.from_numpy(np.argmax(self.problem, axis=1)).to(torch.get_default_device())
+
+    def _create_problem_tensor(self, problem):
+        """
+        Build self.problem (C,H,W,2)  +  缓存 input/output 对象信息
+        """
+        # --- ① 预分配张量 ---
+        self.problem = np.zeros(
+            (self.n_examples, self.n_colors + 1, self.n_x, self.n_y, 2), dtype=np.int8
+        )
+
+        # --- ② 遍历样例 ---
+        for subsplit, n_examples in [('train', self.n_train), ('test', self.n_test)]:
+            for example_num, example in enumerate(problem[subsplit]):
+                new_idx = example_num if subsplit == 'train' else self.n_train + example_num
+
+                for mode in ('input', 'output'):
+                    # 测试集没有 output
+                    if subsplit == 'test' and mode == 'output':
+                        continue
+
+                    # ---------- 对象提取 ----------
+                    original_grid = example.get(
+                        mode, np.zeros(self.shapes[new_idx][1])
+                    )                               # 2-D list/ndarray (H,W)
+                    print(original_grid)
+                    if isinstance(original_grid, list):
+                        original_grid = np.array(original_grid)
+                    if original_grid.ndim != 2:
+                        raise ValueError(f"Expected 2D grid, got {original_grid.ndim}D array.")
+                    if original_grid.shape[0] == 0 or original_grid.shape[1] == 0:
+                        raise ValueError(f"Grid shape {original_grid.shape} is invalid, must be non-empty.")
+
+                    from utils.object_adapter import extract_objects_from_grid
+                    obj_d, obj_m, obj_a = extract_objects_from_grid(
+                        grid=np.array(original_grid),  # 必须二维
+                        pair_id=new_idx,
+                        in_or_out=mode
+                    )
+                    if mode == 'input':
+                        self.input_obj_dicts.append(obj_d)
+                        self.input_obj_masks.append(obj_m)
+                        self.input_obj_attrs.append(obj_a)
+                    else:
+                        self.output_obj_dicts.append(obj_d)
+                        self.output_obj_masks.append(obj_m)
+                        self.output_obj_attrs.append(obj_a)
+                    # --------------------------------
+
+                    # ---------- 原 pipeline ----------
+                    grid_tensor = self._create_grid_tensor(original_grid)  # (C,H,W)
+                    mode_num = 0 if mode == 'input' else 1
+                    self.problem[new_idx, :,
+                                :grid_tensor.shape[1],
+                                :grid_tensor.shape[2],
+                                mode_num] = grid_tensor
+                    # --------------------------------
+        self.problem = torch.from_numpy(np.argmax(self.problem, axis=1)).to(torch.get_default_device())
+
 
     def _create_grid_tensor(self, grid):
         return np.array([

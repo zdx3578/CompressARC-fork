@@ -103,8 +103,8 @@ def channel_layer(target_capacity, posterior):
 
     # We make local adjustments to the desired_global_capacity in order to allow different elements to have
     # different variances.
-    local_capacity_adjustment = (target_capacity + 
-                                 local_capacity_adjustment - 
+    local_capacity_adjustment = (target_capacity +
+                                 local_capacity_adjustment -
                                  torch.mean(local_capacity_adjustment, dim=all_but_last_dim))
     desired_local_capacity = torch.exp(local_capacity_adjustment)*init_capacity + min_capacity
 
@@ -173,7 +173,7 @@ def share_direction(residual, share_weights, direction):
     Returns:
         MultiTensor[Tensor]: The output of the multitensor communication layer.
     """
-    
+
     # Split the multiresidual into two multilinears
     down_project_weights = multitensor_systems.multify(lambda dims, weights: weights[0])(share_weights)
     up_project_weights = multitensor_systems.multify(lambda dims, weights: weights[1])(share_weights)
@@ -509,8 +509,10 @@ def direction_share(dims, x, weights, pre_norm=True, use_bias=False):
     x_list = list(torch.unbind(x, dim=direction_dim))
     z_list = list(torch.unbind(z, dim=direction_dim))
 
-    # Precomputed coefficients for the directional shift.
-    coefficients = [1, 0.2, 0.4, 0.2, 1, 0.2, 0.4, 0.2]
+    # # Precomputed coefficients for the directional shift.
+    # coefficients = [1, 0.2, 0.4, 0.2, 1, 0.2, 0.4, 0.2]
+    # 在direction_share中使用更强的邻近方向交互
+    coefficients = [1, 0.4, 0.6, 0.4, 1, 0.4, 0.6, 0.4]  # 增强邻近方向的权重
 
     # Loop over all pairs of directions.
     for d1 in range(8):
@@ -568,3 +570,5 @@ def postprocess_mask(task, x_mask, y_mask):
     x_mask = x_mask+torch.from_numpy(x_mask_modifier).to(x_mask.device).to(x_mask.dtype)
     y_mask = y_mask+torch.from_numpy(y_mask_modifier).to(y_mask.device).to(y_mask.dtype)
     return x_mask, y_mask
+
+
