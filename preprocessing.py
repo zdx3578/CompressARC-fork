@@ -77,9 +77,9 @@ class Task:
         self.n_x = max(shape[i][0] for shape in self.shapes for i in range(2))
         self.n_y = max(shape[i][1] for shape in self.shapes for i in range(2))
 
-        colors = {color 
+        colors = {color
                   for split in ['train', 'test']
-                  for example in problem[split] 
+                  for example in problem[split]
                   for grid in [example['input'], example.get('output', [])]
                   for row in grid
                   for color in row}
@@ -97,7 +97,7 @@ class Task:
         Convert input/output grids to tensors.
         """
         self.problem = np.zeros((self.n_examples, self.n_colors + 1, self.n_x, self.n_y, 2))
-        
+
         for subsplit, n_examples in [('train', self.n_train), ('test', self.n_test)]:
             for example_num, example in enumerate(problem[subsplit]):
                 new_example_num = example_num if subsplit == 'train' else self.n_train + example_num
@@ -156,6 +156,24 @@ class Task:
         self.masks = torch.from_numpy(self.masks).to(torch.get_default_dtype()).to(torch.get_default_device())
 
 
+# def preprocess_tasks(split, task_nums_or_task_names):
+#     """
+#     Preprocess tasks by loading problems and solutions.
+#     """
+#     with open(f'dataset/arc-agi_{split}_challenges.json', 'r') as f:
+#         problems = json.load(f)
+
+#     solutions = None if split == "test" else json.load(open(f'dataset/arc-agi_{split}_solutions.json'))
+
+#     task_names = list(problems.keys())
+
+#     return [Task(task_name,
+#                  problems[task_name],
+#                  solutions.get(task_name) if solutions else None)
+#             for task_name in task_names
+#             if task_name in task_nums_or_task_names or task_names.index(task_name) in task_nums_or_task_names]
+
+
 def preprocess_tasks(split, task_nums_or_task_names):
     """
     Preprocess tasks by loading problems and solutions.
@@ -164,11 +182,39 @@ def preprocess_tasks(split, task_nums_or_task_names):
         problems = json.load(f)
 
     solutions = None if split == "test" else json.load(open(f'dataset/arc-agi_{split}_solutions.json'))
-    
+
+    print(f"Loaded {len(problems)} tasks from {split} split.")
+
     task_names = list(problems.keys())
-    
+    selected_task_names = []
+
+    # 将输入统一为列表格式
+    if isinstance(task_nums_or_task_names, (str, int)):
+        task_nums_or_task_names = [task_nums_or_task_names]
+
+    print(f"Searching for tasks: {task_nums_or_task_names}")
+
+    # 收集有效的任务名称
+    for item in task_nums_or_task_names:
+        if isinstance(item, str):
+            if item in task_names:
+                selected_task_names.append(item)
+            else:
+                print(f"Warning: Task '{item}' not found in {split} split")
+        elif isinstance(item, int):
+            if 0 <= item < len(task_names):
+                selected_task_names.append(task_names[item])
+            else:
+                print(f"Warning: Task index {item} out of range (0-{len(task_names)-1})")
+
+    if not selected_task_names:
+        print(f"Error: No valid tasks found from input {task_nums_or_task_names}")
+        print(f"Available tasks: {task_names[:5]}... (total: {len(task_names)})")
+        return []
+
+    print(f"Selected tasks: {selected_task_names}")
+
     return [Task(task_name,
-                 problems[task_name],
-                 solutions.get(task_name) if solutions else None)
-            for task_name in task_names
-            if task_name in task_nums_or_task_names or task_names.index(task_name) in task_nums_or_task_names]
+                problems[task_name],
+                solutions.get(task_name) if solutions else None)
+           for task_name in selected_task_names]

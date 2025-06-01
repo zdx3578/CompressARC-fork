@@ -39,8 +39,12 @@ if __name__ == "__main__":
 
     # Some interesting tasks: 272f95fa, 6d75e8bb, 6cdd2623, 41e4d17e, 2bee17df
     # 228f6490, 508bd3b6, 2281f1f4, ecdecbb3
-    split = input('Enter which split you want to find the task in (training, evaluation, test): ')
-    task_name = input('Enter which task you want to analyze (eg. 272f95fa): ')
+    # split = input('Enter which split you want to find the task in (training, evaluation, test): ')
+    # task_name = input('Enter which task you want to analyze (eg. 272f95fa): ')
+
+    split = 'training'
+    task_name = '0a2355a6'
+
     folder = task_name + '/'
     print('Performing a training run on task', task_name,
           'and placing the results in', folder)
@@ -57,7 +61,7 @@ if __name__ == "__main__":
     n_iterations = 1500
     for train_step in tqdm(range(n_iterations)):
         train.take_step(task, model, optimizer, train_step, train_history_logger)
-        
+
         # Plot solutions every 50 steps
         if (train_step+1) % 50 == 0:
             visualization.plot_solution(train_history_logger,
@@ -80,7 +84,7 @@ if __name__ == "__main__":
     multiposteriors = stored_data['multiposteriors'][()]
     target_capacities = stored_data['target_capacities'][()]
     decode_weights = stored_data['decode_weights'][()]
-    
+
     # Plot the KL curves over time.
     # For specific tasks that we found interesting, we wrote some
     # code to color interesting KL components differently.
@@ -189,7 +193,7 @@ if __name__ == "__main__":
                 # Show the component
                 fig, ax = plt.subplots()
                 ax.imshow(component, cmap='gray', vmin=-1, vmax=1)
-                
+
                 # Pick the axis labels
                 axis_names = ['example', 'color', 'direction', 'height', 'width']
                 tensor_name = '_'.join([axis_name
