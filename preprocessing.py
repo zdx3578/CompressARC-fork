@@ -23,6 +23,8 @@ class Task:
         self.input_obj_masks,  self.output_obj_masks  = [], []
         self.input_obj_attrs,  self.output_obj_attrs  = [], []
 
+        self.n_obj_channels = 1
+
         self.shapes = self._collect_problem_shapes(problem)
         self._predict_solution_shapes()
         self._construct_multitensor_system(problem)
@@ -32,6 +34,8 @@ class Task:
         self.solution = self._create_solution_tensor(solution) if solution else None
         if solution is None:
             self.solution_hash = None
+
+
 
 
 
@@ -93,52 +97,16 @@ class Task:
 
         self.colors = list(sorted(colors))
         self.n_colors = len(self.colors) - 1
+        self.n_color_channels = self.n_colors + 1   # 颜色 + bg
+        self.total_channels  = self.n_color_channels + self.n_obj_channels
 
         self.multitensor_system = multitensor_systems.MultiTensorSystem(
             self.n_examples, self.n_colors, self.n_x, self.n_y, self
         )
 
-    def _create_problem_tensor000(self, problem):
-        """
-        Convert input/output grids to tensors.
-        """
-        self.problem = np.zeros((self.n_examples, self.n_colors + 1, self.n_x, self.n_y, 2))
-
-        for subsplit, n_examples in [('train', self.n_train), ('test', self.n_test)]:
-            for example_num, example in enumerate(problem[subsplit]):
-                new_example_num = example_num if subsplit == 'train' else self.n_train + example_num
-
-                for mode in ('input', 'output'):
-                    if subsplit == 'test' and mode == 'output':
-                        continue
-
-                    grid = self._create_grid_tensor(
-                        example.get(mode, np.zeros(self.shapes[new_example_num][1]))
-                    )
-
-                    # ---------- ① input / output 都抽对象 ----------
-                    from utils.object_adapter import extract_objects_from_grid
-
-                    obj_d, obj_m, obj_a = extract_objects_from_grid(
-                        grid=np.array(example[mode]),
-                        pair_id=new_example_num,
-                        in_or_out=mode
-                    )
-                    # 根据 mode 写入不同列表
-                    if mode == 'input':
-                        self.input_obj_dicts.append(obj_d)
-                        self.input_obj_masks.append(obj_m)
-                        self.input_obj_attrs.append(obj_a)
-                    else:  # output
-                        self.output_obj_dicts.append(obj_d)
-                        self.output_obj_masks.append(obj_m)
-                        self.output_obj_attrs.append(obj_a)
 
 
-                    mode_num = 0 if mode == 'input' else 1
-                    self.problem[new_example_num, :, :grid.shape[1], :grid.shape[2], mode_num] = grid
 
-        self.problem = torch.from_numpy(np.argmax(self.problem, axis=1)).to(torch.get_default_device())
 
     def _create_problem_tensor(self, problem):
         """
@@ -146,7 +114,7 @@ class Task:
         """
         # --- ① 预分配张量 ---
         self.problem = np.zeros(
-            (self.n_examples, self.n_colors + 1, self.n_x, self.n_y, 2), dtype=np.int8
+            (self.n_examples, self.total_channels, self.n_x, self.n_y, 2), dtype=np.int8
         )
 
         # --- ② 遍历样例 ---
@@ -187,15 +155,38 @@ class Task:
                         self.output_obj_attrs.append(obj_a)
                     # --------------------------------
 
+
                     # ---------- 原 pipeline ----------
-                    grid_tensor = self._create_grid_tensor(original_grid)  # (C,H,W)
+                    grid_tensor = self._create_grid_tensor(original_grid)   # (C0,H,W)
+                    H, W = grid_tensor.shape[1:]
+
+                    # ---------- union mask ----------
+                    if obj_m.shape[0] > 0:
+                        union_mask = obj_m.any(dim=0).to(torch.int8).numpy()
+                    else:
+                        union_mask = np.zeros((H, W), dtype=np.int8)
+
+                    union_mask = union_mask[:H, :W]  
+
                     mode_num = 0 if mode == 'input' else 1
-                    self.problem[new_idx, :,
-                                :grid_tensor.shape[1],
-                                :grid_tensor.shape[2],
+
+                    # ---------- 写入 ----------
+                    self.problem[new_idx,
+                                :self.n_color_channels,
+                                :H, :W,
                                 mode_num] = grid_tensor
-                    # --------------------------------
-        self.problem = torch.from_numpy(np.argmax(self.problem, axis=1)).to(torch.get_default_device())
+
+                    self.problem[new_idx,
+                                self.n_color_channels,   # 对象掩码通道
+                                :H, :W,
+                                mode_num] = union_mask
+
+
+
+        color_tensor = self.problem[:, :self.n_color_channels, ...]
+        color_idx = np.argmax(color_tensor, axis=1)          # (N,H,W,2)
+        self.problem = torch.from_numpy(color_idx).to(torch.get_default_device())
+
 
 
     def _create_grid_tensor(self, grid):
