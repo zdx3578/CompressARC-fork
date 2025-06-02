@@ -2,6 +2,7 @@ import time
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 import preprocessing
 import arc_compressor
@@ -188,7 +189,23 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
     else:
         sparsity_penalty = 0.0
 
-    loss = 2*reconstruction_error + total_KL + sparsity_penalty
+    # loss = 2*reconstruction_error + total_KL + sparsity_penalty
+
+    if train_step < 990:
+        gamma = 13
+        beta  = 1.0
+        lam   = 1e-4
+    elif train_step < 1500:
+        gamma = 5
+        beta  = 2.0
+        lam   = 3e-4
+    else:
+        gamma = 2
+        beta  = 4.0
+        lam   = 5e-4
+
+    loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
+
 
 
     loss.backward()
@@ -267,14 +284,31 @@ if __name__ == "__main__":
     # Train the models one by one
     for i, (task, model, optimizer, train_history_logger) in enumerate(zip(tasks, models, optimizers, train_history_loggers)):
         n_iterations = 2000
-        for train_step in range(n_iterations):
+        print(f"\nTraining task {i+1}/{len(tasks)}: {task_name}")
+
+        # 创建tqdm进度条
+        pbar = tqdm(range(n_iterations), desc=f"Training {task_name}",
+                   unit="step", ncols=100, leave=True)
+
+        for train_step in pbar:
             take_step(task, model, optimizer, train_step, train_history_logger)
+
+            # 更新进度条显示信息
+            if train_step % 10 == 0:  # 每10步更新一次显示
+                # 获取最新的损失信息
+                last_loss = getattr(train_history_logger, 'losses', [0])[-1] if hasattr(train_history_logger, 'losses') and train_history_logger.losses else 0
+                pbar.set_postfix({
+                    'step': train_step + 1,
+                    'loss': f"{last_loss:.4f}" if isinstance(last_loss, (int, float)) else "N/A"
+                })
 
             if (train_step+1) % 99 == 0:
                 visualization.plot_solution(train_history_logger,
                     fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.png')
                 visualization.plot_solution(train_history_logger,
                     fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.pdf')
+
+        pbar.close()  # 确保进度条正确关闭
 
         visualization.plot_solution(train_history_logger)
         solution_selection.save_predictions(train_history_loggers[:i+1])
