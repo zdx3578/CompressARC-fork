@@ -35,17 +35,26 @@ def op_fill_line(canvas, mask, params):
 @register("draw_cross")
 def op_draw_cross(canvas, mask, params):
     """
-    params[0]: color, params[1]: width (0-4)
+    params[0]: color id 0‥9   （softmax、argmax 外部完成）
+    params[1]: width 0‥4
     """
-    color = params[0].long().clamp(0,9)
-    w     = params[1].long().clamp(0,4)
-    if mask.sum()==0:
-        return canvas
-    center = mask.float().mean(0).round().long()
-    cx, cy = center.tolist()
-    canvas[max(cx-w,0):cx+w+1, :] = color
-    canvas[:, max(cy-w,0):cy+w+1] = color
+    color = params[0].long().clamp(0, 9)
+    w     = params[1].long().clamp(0, 4)
+
+    if mask.sum() == 0:
+        return canvas                        # 空掩码直接返回
+
+    # 取前景像素坐标，再求行、列平均 → 中心点
+    coords  = mask.nonzero(as_tuple=False)   # (N, 2)  [[r,c],...]
+    center  = coords.float().mean(dim=0).round().long()   # (2,)
+    cx, cy  = center.tolist()
+
+    # 画十字：横竖宽度 w
+    canvas[max(cx-w, 0): cx+w+1, :] = color
+    canvas[:, max(cy-w, 0): cy+w+1] = color
     return canvas
+
+
 # TODO: 更多算子
 
 @register("recolor_mask")

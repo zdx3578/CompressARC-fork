@@ -157,7 +157,7 @@ class Task:
                         self.output_obj_masks.append(obj_m)
                         self.output_obj_attrs.append(obj_a)
                     # --------------------------------
-                    
+
                     from utils.attr_registry import build_attr_tensor
                     # ...
                     obj_attrs_tensor = build_attr_tensor(obj_d)   # (N,D)
@@ -174,7 +174,7 @@ class Task:
 
                     # ---------- union mask ----------
                     if obj_m.shape[0] > 0:
-                        union_mask = obj_m.any(dim=0).to(torch.int8).numpy()
+                        union_mask = obj_m.any(dim=0).to(torch.int8).cpu().numpy()
                     else:
                         union_mask = np.zeros((H, W), dtype=np.int8)
 

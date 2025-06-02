@@ -86,23 +86,44 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
 
     optimizer.zero_grad()
 
+    # rule_layer = getattr(model, "rule_layer", None)
+    # USE_RULE_LAYER = getattr(model, "use_rule", False)
+
+    # ---------- RuleLayer 叠加 ----------
     rule_layer = getattr(model, "rule_layer", None)
     USE_RULE_LAYER = getattr(model, "use_rule", False)
 
-    if USE_RULE_LAYER:
-        canvas       = task.problem[:, :, :,  0]        # (N,C,H,W)
-        union_masks  = task.input_obj_masks
-        attr_tensors = task.input_attr_tensor
-        for idx in range(task.n_examples):
-            patched = rule_layer(
-                canvas[idx, 0].clone(),
-                attr_tensors[idx],
-                union_masks[idx]
-            )
-            mask_union = union_masks[idx].any(dim=0)      # (H,W)  前景像素 True
-            canvas[idx][mask_union] = patched[mask_union] # 直接写颜色索引
+    if USE_RULE_LAYER and rule_layer is not None:
+        canvas       = task.problem[:, :, :, 0]        # (N,H,W) 颜色索引
+        union_masks  = task.input_obj_masks            # List[Tensor]
+        attr_tensors = task.input_attr_tensor          # List[Tensor]
 
-        task.problem[:, :, :,  0] = canvas
+        for idx in range(task.n_examples):
+            # 当前样例真实网格大小
+            H, W = canvas[idx].shape                   # (H,W)
+
+            # 取并裁剪掩码  → mask_i shape = (Ni,H,W)  或 (H,W)
+            raw_mask = union_masks[idx]
+            if raw_mask.ndim == 3:                     # (Ni,30,30)
+                mask_i = raw_mask[:, :H, :W]
+            else:                                      # (30,30)
+                mask_i = raw_mask[:H, :W]
+
+            # 调用 RuleLayer
+            patched = rule_layer(
+                canvas[idx].clone(),                   # (H,W)
+                attr_tensors[idx],                     # (Ni,D)
+                mask_i.to(canvas.device)               # 对齐设备
+            )
+
+            # 前景区域换色
+            mask_union = mask_i.any(dim=0)             # (H,W)
+            canvas[idx][mask_union] = patched[mask_union]
+
+        # 写回 Task.problem (仅输入帧)
+        task.problem[:, :, :, 0] = canvas
+    # ---------- RuleLayer 结束 ----------
+
 
     logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
     logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
@@ -215,7 +236,7 @@ if __name__ == "__main__":
         USE_RULE_LAYER = True        # 改 False → 彻底关闭规则层
         if USE_RULE_LAYER:
             attr_dim   = build_attr_tensor(task.input_obj_dicts[0]).shape[1]
-            rule_layer = SparseRuleLayer(attr_dim, K_ops=8, temp=1.0)
+            rule_layer = SparseRuleLayer(attr_dim, K_ops=8, temp=1.0).to(device)
             optimizer  = torch.optim.Adam(
                 model.weights_list + list(rule_layer.parameters()),
                 lr=0.01

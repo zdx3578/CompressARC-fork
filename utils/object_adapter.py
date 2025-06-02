@@ -71,12 +71,12 @@ def extract_objects_from_grid(grid,
 
 
     masks = (torch.from_numpy(np.stack(mask_list, 0))
-             if mask_list else torch.zeros((0, canvas_size, canvas_size), dtype=torch.bool))
+             if mask_list else torch.zeros((0, canvas_size, canvas_size), dtype=torch.bool)).to(torch.get_default_device())
 
     attrs = {
-        "color": torch.tensor(colors, dtype=torch.long),
-        "size":  torch.tensor(sizes,  dtype=torch.float),
-        "holes": torch.tensor(holes,  dtype=torch.long),  
+        "color": torch.tensor(colors, dtype=torch.long).to(torch.get_default_device()),
+        "size":  torch.tensor(sizes,  dtype=torch.float).to(torch.get_default_device()),
+        "holes": torch.tensor(holes,  dtype=torch.long).to(torch.get_default_device()),
     }
     return obj_dicts, masks, attrs
 

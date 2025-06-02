@@ -49,4 +49,4 @@ def build_attr_tensor(obj_dicts, keys=None):
     for obj in obj_dicts:
         cols = [REGISTRY[k](obj) for k in keys]
         feats.append(np.concatenate(cols, axis=0))
-    return torch.tensor(np.stack(feats, axis=0), dtype=torch.float32)
+    return torch.tensor(np.stack(feats, axis=0), dtype=torch.float32).to(torch.get_default_device())
