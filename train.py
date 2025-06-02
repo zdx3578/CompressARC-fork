@@ -56,7 +56,7 @@ This file trains a model for every ARC-AGI task in a split.
 np.random.seed(0)
 torch.manual_seed(0)
 
-USE_RULE_LAYER = True
+# USE_RULE_LAYER = True
 
 
 def mask_select_logprobs(mask, length):
@@ -86,48 +86,49 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
     """
 
     optimizer.zero_grad()
+    # optimizer.zero_grad()
+    logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
+    logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
 
-    # rule_layer = getattr(model, "rule_layer", None)
-    # USE_RULE_LAYER = getattr(model, "use_rule", False)
 
     # ---------- RuleLayer 叠加 ----------
     rule_layer = getattr(model, "rule_layer", None)
     USE_RULE_LAYER = getattr(model, "use_rule", False)
 
-    if USE_RULE_LAYER and rule_layer is not None:
-        canvas       = task.problem[:, :, :, 0]        # (N,H,W) 颜色索引
-        union_masks  = task.input_obj_masks            # List[Tensor]
-        attr_tensors = task.input_attr_tensor          # List[Tensor]
+    # if USE_RULE_LAYER and rule_layer is not None:
+    #     canvas       = task.problem[:, :, :, 0]        # (N,H,W) 颜色索引
+    #     union_masks  = task.input_obj_masks            # List[Tensor]
+    #     attr_tensors = task.input_attr_tensor          # List[Tensor]
 
-        for idx in range(task.n_examples):
-            # 当前样例真实网格大小
-            H, W = canvas[idx].shape                   # (H,W)
+    #     for idx in range(task.n_examples):
+    #         # 当前样例真实网格大小
+    #         H, W = canvas[idx].shape                   # (H,W)
 
-            # 取并裁剪掩码  → mask_i shape = (Ni,H,W)  或 (H,W)
-            raw_mask = union_masks[idx]
-            if raw_mask.ndim == 3:                     # (Ni,30,30)
-                mask_i = raw_mask[:, :H, :W]
-            else:                                      # (30,30)
-                mask_i = raw_mask[:H, :W]
+    #         # 取并裁剪掩码  → mask_i shape = (Ni,H,W)  或 (H,W)
+    #         raw_mask = union_masks[idx]
+    #         if raw_mask.ndim == 3:                     # (Ni,30,30)
+    #             mask_i = raw_mask[:, :H, :W]
+    #         else:                                      # (30,30)
+    #             mask_i = raw_mask[:H, :W]
 
-            # 调用 RuleLayer
-            patched = rule_layer(
-                canvas[idx].clone(),                   # (H,W)
-                attr_tensors[idx],                     # (Ni,D)
-                mask_i.to(canvas.device)               # 对齐设备
-            )
+    #         # 调用 RuleLayer
+    #         patched = rule_layer(
+    #             canvas[idx].clone(),                   # (H,W)
+    #             attr_tensors[idx],                     # (Ni,D)
+    #             mask_i.to(canvas.device)               # 对齐设备
+    #         )
 
-            # 前景区域换色
-            mask_union = mask_i.any(dim=0)             # (H,W)
-            canvas[idx][mask_union] = patched[mask_union]
+    #         # 前景区域换色
+    #         mask_union = mask_i.any(dim=0)             # (H,W)
+    #         canvas[idx][mask_union] = patched[mask_union]
 
-        # 写回 Task.problem (仅输入帧)
-        task.problem[:, :, :, 0] = canvas
-    # ---------- RuleLayer 结束 ----------
+    #     # 写回 Task.problem (仅输入帧)
+    #     task.problem[:, :, :, 0] = canvas
+    # # ---------- RuleLayer 结束 ----------
 
 
-    logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
-    logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
+    # logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
+    # logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
 
     # Compute the total KL loss
     total_KL = 0
@@ -191,18 +192,17 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
 
     # loss = 2*reconstruction_error + total_KL + sparsity_penalty
 
-    if train_step < 990:
-        gamma = 13
-        beta  = 1.0
-        lam   = 1e-4
-    elif train_step < 1500:
-        gamma = 5
-        beta  = 2.0
-        lam   = 3e-4
+
+    if train_step < 350:         gamma, beta, lam = 10, 1, 0.0
+    elif train_step < 800:       # linear anneal
+        frac  = (train_step)/650
+        gamma = 10 - 5*frac
+        beta  = 1  + 1*frac
+        lam   = 3e-4 * frac
     else:
         gamma = 2
-        beta  = 4.0
-        lam   = 5e-4
+        beta  = 4
+        lam   = 1e-3
 
     loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
 
@@ -239,6 +239,11 @@ if __name__ == "__main__":
 
 
     task_name = '0a2355a6'
+    folder = task_name + '/'
+    print('Performing a training run on task', task_name,
+          'and placing the results in', folder)
+    os.makedirs(folder, exist_ok=True)
+
     task = preprocessing.preprocess_tasks(split, [task_name])[0]
     tasks = [task]
 
