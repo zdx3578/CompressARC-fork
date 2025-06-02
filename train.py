@@ -90,45 +90,41 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
     logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
     logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
 
-
-    # ---------- RuleLayer 叠加 ----------
+    # ── 2) RuleLayer 仅对“网络输出”做后处理 ────────────
     rule_layer = getattr(model, "rule_layer", None)
     USE_RULE_LAYER = getattr(model, "use_rule", False)
+    if USE_RULE_LAYER and rule_layer is not None:
+        # a) 取网络初步颜色索引
+        pred_idx = logits.argmax(dim=1)                    # (N,H,W)
 
-    # if USE_RULE_LAYER and rule_layer is not None:
-    #     canvas       = task.problem[:, :, :, 0]        # (N,H,W) 颜色索引
-    #     union_masks  = task.input_obj_masks            # List[Tensor]
-    #     attr_tensors = task.input_attr_tensor          # List[Tensor]
+        # b) 逐样例裁剪掩码并调用 RuleLayer
+        # for idx in range(task.n_examples):
+        n_out = len(task.output_obj_masks)   # 仅 train 样例有 output
+        for idx in range(n_out):
+            pred_out = pred_idx[idx, :, :, 1].clone()   # (H,W) long
+            H, W = pred_out.shape
 
-    #     for idx in range(task.n_examples):
-    #         # 当前样例真实网格大小
-    #         H, W = canvas[idx].shape                   # (H,W)
+            raw_mask = task.output_obj_masks[idx]
+            mask_i   = raw_mask[:, :H, :W] if raw_mask.ndim == 3 else raw_mask[:H, :W]
 
-    #         # 取并裁剪掩码  → mask_i shape = (Ni,H,W)  或 (H,W)
-    #         raw_mask = union_masks[idx]
-    #         if raw_mask.ndim == 3:                     # (Ni,30,30)
-    #             mask_i = raw_mask[:, :H, :W]
-    #         else:                                      # (30,30)
-    #             mask_i = raw_mask[:H, :W]
+            patched = rule_layer(
+                pred_out.clone(),                     # (H,W)
+                task.output_attr_tensor[idx],              # (Ni,D)
+                mask_i.to(pred_idx.device)                 # (Ni,H,W) or (H,W)
+            )
+            mask_union = mask_i.any(dim=0)              # (H,W)
+            pred_out[mask_union] = patched[mask_union]
 
-    #         # 调用 RuleLayer
-    #         patched = rule_layer(
-    #             canvas[idx].clone(),                   # (H,W)
-    #             attr_tensors[idx],                     # (Ni,D)
-    #             mask_i.to(canvas.device)               # 对齐设备
-    #         )
+            # 写回 (H,W,2) 张量的输出通道
+            pred_idx[idx, :, :, 1] = pred_out
 
-    #         # 前景区域换色
-    #         mask_union = mask_i.any(dim=0)             # (H,W)
-    #         canvas[idx][mask_union] = patched[mask_union]
+        # c) one-hot + straight-through 写回 logits
+        patched_onehot = torch.nn.functional.one_hot(
+            pred_idx, logits.shape[1]).permute(0, 3, 1, 2).float()
+        logits = patched_onehot.detach() + logits - logits.detach()
 
-    #     # 写回 Task.problem (仅输入帧)
-    #     task.problem[:, :, :, 0] = canvas
-    # # ---------- RuleLayer 结束 ----------
+    # ── logits 现已包含 RuleLayer 修改，下方重构误差照旧 ──
 
-
-    # logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
-    # logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
 
     # Compute the total KL loss
     total_KL = 0
@@ -183,14 +179,15 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
             logprob = torch.logsumexp(coefficient*logprobs, dim=(0,1))/coefficient  # Aggregate for all possible grid sizes
             reconstruction_error = reconstruction_error - logprob
 
-    # loss = total_KL + 10*reconstruction_error
-    if USE_RULE_LAYER:
-        sparsity_penalty = 1e-4 * rule_layer.selector(
-            attr_tensors[0]).abs().mean()
+    # ---------- sparsity penalty ----------
+    if USE_RULE_LAYER and rule_layer is not None:
+        # 以首样例的属性张量估算稀疏度
+        lam_sched = 0.0 if train_step < 150 else \
+                    3e-4 * min(1.0, (train_step-150)/450)
+        sparsity_penalty = lam_sched * rule_layer.selector(
+            task.output_attr_tensor[0]).abs().mean()
     else:
         sparsity_penalty = 0.0
-
-    # loss = 2*reconstruction_error + total_KL + sparsity_penalty
 
 
     if train_step < 350:         gamma, beta, lam = 10, 1, 0.0
