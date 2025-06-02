@@ -47,3 +47,56 @@ def op_draw_cross(canvas, mask, params):
     canvas[:, max(cy-w,0):cy+w+1] = color
     return canvas
 # TODO: 更多算子
+
+@register("recolor_mask")
+def op_recolor_mask(canvas, mask, params):
+    """
+    重上色算子：把 mask 内像素改为 params 指定颜色
+    canvas : (H,W) int tensor  *或* 展平 1-D
+    mask   : (H,W) bool tensor
+    params : (...>=1)  第 0 维为颜色 logits
+    """
+    # --- 取颜色 id ---
+    color = params[0].softmax(0).argmax().long().clamp(0, 9)
+
+    # --- 确保形状匹配 ---
+    if canvas.dim() == 1:
+        if canvas.numel() == mask.numel():
+            canvas = canvas.view_as(mask)
+        else:  # 兜底：直接 reshape 失败，用 debug
+            raise ValueError(f"[recolor_mask] shape mismatch: "
+                             f"canvas.numel={canvas.numel()} vs mask={mask.shape}")
+
+    # --- 上色 ---
+    canvas = canvas.clone()          # 避免就地影响上游
+    canvas[mask] = color
+    return canvas
+
+
+
+@register("noop")
+def op_noop(canvas, mask, params):
+    """什么也不做，占位算子"""
+    return canvas
+
+
+@register("noop1")
+def op_noop1(canvas, mask, params):
+    """什么也不做，占位算子"""
+    return canvas
+
+@register("noop2")
+def op_noop2(canvas, mask, params):
+    """什么也不做，占位算子"""
+    return canvas
+
+@register("noop3")
+def op_noop3(canvas, mask, params):
+    """什么也不做，占位算子"""
+    return canvas
+
+@register("noop4")
+def op_noop4(canvas, mask, params):
+    """什么也不做，占位算子"""
+    return canvas
+

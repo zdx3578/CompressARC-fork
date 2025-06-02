@@ -10,15 +10,20 @@ class SparseRuleLayer(nn.Module):
     """
     def __init__(self, attr_dim, K_ops=8, hidden=64, temp=1.0):
         super().__init__()
-        self.K = K_ops
+        # self.K = K_ops
         self.attr_dim = attr_dim
         self.temp = temp
-
-        self.selector = nn.Linear(attr_dim, K_ops)       # 选算子
-        self.param_head = nn.Linear(attr_dim, K_ops*4)   # 每算子最多 4 个参数
-
-        self.op_names = list(OP_BANK.keys())[:K_ops]     # 固定顺序
         self.n_params = 4
+
+        self.K = min(K_ops, len(OP_BANK))
+        self.op_names = list(OP_BANK.keys())[:self.K]
+        self.selector = nn.Linear(attr_dim, self.K)
+        self.param_head = nn.Linear(attr_dim, self.K * self.n_params)
+
+        # self.selector = nn.Linear(attr_dim, K_ops)       # 选算子
+        # self.param_head = nn.Linear(attr_dim, K_ops*4)   # 每算子最多 4 个参数
+        # self.op_names = list(OP_BANK.keys())[:K_ops]     # 固定顺序
+
 
     def forward(self, canvas, attr_tensor, obj_masks):
         """
@@ -33,13 +38,47 @@ class SparseRuleLayer(nn.Module):
         params_raw = self.param_head(attr_tensor)                # (N,K*P)
         params_raw = params_raw.view(N, self.K, self.n_params)
 
+        # print('!!debug111')
+        # print(canvas)
+
         # 遍历对象
+
         for i in range(N):
             k = sel_prob[i].argmax().item()
             op_name = self.op_names[k]
             op_func = OP_BANK[op_name]
             mask_i  = obj_masks[i]
             p_i     = params_raw[i,k]
-            canvas  = op_func(canvas, mask_i, p_i)
+            H, W     = mask_i.shape
+            if canvas.dim() == 1 or canvas.numel() < mask_i.numel():
+                print(f"[DEBUG] before {op_name}: canvas.shape={canvas.shape}, "
+                    f"mask.shape={mask_i.shape}, obj_id={i}")
+            if canvas.dim() == 1:
+                print(f"[DBG] before {self.op_names[k]}  obj={i}  flat_len={canvas.numel()}")
+
+            # print('!!debug')
+            # print(canvas)
+
+            # ---------- 取基准画布，永远 2-D ----------
+            if canvas.dim() != 2 or canvas.numel() != H * W:
+                # 无论之前被压扁成什么，都重建为 (H,W)
+                canvas_2d = canvas.new_full((H, W), fill_value=0)
+                if canvas.numel() == H * W:
+                    canvas_2d.copy_(canvas.view(H, W))
+                canvas = canvas_2d                     # 保证后续正常
+            # ---------- 运行算子 ----------
+            canvas_tmp = op_func(canvas.clone(), mask_i, p_i)
+
+            # 再保险：算子若返回奇形，也强制 view
+            if canvas_tmp.shape != (H, W):
+                if canvas_tmp.numel() == H * W:
+                    canvas_tmp = canvas_tmp.view(H, W)
+                else:
+                    raise ValueError(
+                        f"[{op_func.__name__}] invalid shape {canvas_tmp.shape}"
+                    )
+
+            # ---------- 合并结果 ----------
+            canvas = torch.where(mask_i, canvas_tmp, canvas)
 
         return canvas

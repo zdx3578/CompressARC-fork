@@ -15,6 +15,39 @@ import visualization
 from rulelayers.sparse_rule_layer import SparseRuleLayer
 from utils.attr_registry import build_attr_tensor
 
+import os
+import sys
+
+possible_pypaths = [
+    '/kaggle/input/3-28arcdsl'
+    '/kaggle/input/3-28arcdsl/forpopper2',
+    '/kaggle/input/3-28arcdsl/bateson',
+    '/Users/zhangdexiang/github/VSAHDC/arcv2',
+    '/Users/zhangdexiang/github/VSAHDC/arcv2/forpopper2',
+    '/Users/zhangdexiang/github/VSAHDC',
+    '/home/zdx/github/VSAHDC/arcv2',
+    '/home/zdx/github/VSAHDC/arcv2/forpopper2',
+    '/home/zdx/github/VSAHDC',
+    '/home/zdx/github/VSAHDC/arcMrule',
+    '/home/zdx/github/VSAHDC/arcMrule/diffstar',
+    '/another/path/to/check'
+]
+
+# 遍历路径列表，检查并按需加载
+for path in possible_pypaths:
+    if os.path.exists(path):
+        print(f"Adding path to sys.path: {path}")
+        sys.path.append(path)
+    else:
+        print(f"Path does not exist, skipping: {path}")
+
+# 打印最终的 sys.path 以确认结果
+print("Current sys.path:")
+for p in sys.path:
+    print(p)
+
+torch.set_default_device('cuda')
+
 """
 This file trains a model for every ARC-AGI task in a split.
 """
@@ -155,12 +188,22 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
 
 if __name__ == "__main__":
     start_time = time.time()
-
-    task_nums = list(range(400))
+    torch.set_default_device('cuda')
+    task_nums = list(range(1000))
     split = "training"  # "training", "evaluation, or "test"
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = "cpu"
+
+
     # Preprocess all tasks, make models, optimizers, and loggers. Make plots.
-    tasks = preprocessing.preprocess_tasks(split, task_nums)
+    # tasks = preprocessing.preprocess_tasks(split, task_nums)
+
+
+    task_name = '0a2355a6'
+    task = preprocessing.preprocess_tasks(split, [task_name])[0]
+    tasks = [task]
+
     models = []
     optimizers = []
     train_history_loggers = []
@@ -174,7 +217,7 @@ if __name__ == "__main__":
             attr_dim   = build_attr_tensor(task.input_obj_dicts[0]).shape[1]
             rule_layer = SparseRuleLayer(attr_dim, K_ops=8, temp=1.0)
             optimizer  = torch.optim.Adam(
-                list(model.parameters()) + list(rule_layer.parameters()),
+                model.weights_list + list(rule_layer.parameters()),
                 lr=0.01
             )
         else:
@@ -191,17 +234,58 @@ if __name__ == "__main__":
         visualization.plot_problem(train_history_logger)
         train_history_loggers.append(train_history_logger)
 
+        # ── 在每个 task 训练完、进入下一个 task 前加 ─────────────────
+
+
+
     # Get the solution hashes so that we can check for correctness
     true_solution_hashes = [task.solution_hash for task in tasks]
+
+    folder = task_name + '/'
 
     # Train the models one by one
     for i, (task, model, optimizer, train_history_logger) in enumerate(zip(tasks, models, optimizers, train_history_loggers)):
         n_iterations = 2000
         for train_step in range(n_iterations):
             take_step(task, model, optimizer, train_step, train_history_logger)
+
+            if (train_step+1) % 99 == 0:
+                visualization.plot_solution(train_history_logger,
+                    fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.png')
+                visualization.plot_solution(train_history_logger,
+                    fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.pdf')
+
         visualization.plot_solution(train_history_logger)
         solution_selection.save_predictions(train_history_loggers[:i+1])
         solution_selection.plot_accuracy(true_solution_hashes)
+
+        if USE_RULE_LAYER:
+                print(f"\n[DEBUG]  Rule inspection for task {task_name}")
+
+                # 取第一条样例（idx=0），也可以随机取
+                attr0  = task.input_attr_tensor[0].to(device)     # (N_obj,D)
+                masks0 = task.input_obj_masks[0].to(device)       # (N_obj,H,W)
+
+                with torch.no_grad():
+                    # selector logits → 概率
+                    sel_logits = model.rule_layer.selector(attr0)          # (N_obj,K)
+                    sel_probs  = sel_logits.softmax(dim=-1)
+                    chosen_op  = sel_probs.argmax(dim=-1).cpu().tolist()   # 每对象选哪算子
+                    print("Chosen op indices:", chosen_op)                 # 0..K-1
+
+                    # 颜色 logits （第 0 参数）
+                    param_logits = model.rule_layer.param_head(attr0)[:,0] # (N_obj,K)
+                    colors = param_logits.softmax(-1).argmax(-1).cpu().tolist()
+                    print("Predicted colors per object:", colors)
+
+        if USE_RULE_LAYER:
+            attr0  = task.input_attr_tensor[0].to(device)
+            with torch.no_grad():
+                probs = model.rule_layer.selector(attr0).softmax(-1)
+                print("Chosen op idx per object:", probs.argmax(-1).tolist())
+                color_logits = model.rule_layer.param_head(attr0)[:, 0]
+                colors = color_logits.softmax(-1).argmax(-1).tolist()
+                print("Predicted colors:", colors)
 
     # Write down how long it all took
     with open('timing_result.txt', 'w') as f:
