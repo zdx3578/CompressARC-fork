@@ -22,6 +22,8 @@ This file trains a model for every ARC-AGI task in a split.
 np.random.seed(0)
 torch.manual_seed(0)
 
+USE_RULE_LAYER = True
+
 
 def mask_select_logprobs(mask, length):
     """
@@ -51,19 +53,23 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
 
     optimizer.zero_grad()
 
+    rule_layer = getattr(model, "rule_layer", None)
+    USE_RULE_LAYER = getattr(model, "use_rule", False)
+
     if USE_RULE_LAYER:
-        canvas       = task.problem[:, :, :, :, 0]        # (N,C,H,W)
+        canvas       = task.problem[:, :, :,  0]        # (N,C,H,W)
         union_masks  = task.input_obj_masks
         attr_tensors = task.input_attr_tensor
         for idx in range(task.n_examples):
             patched = rule_layer(
                 canvas[idx, 0].clone(),
-                attr_tensors[idx].to(device),
-                union_masks[idx].to(device)
+                attr_tensors[idx],
+                union_masks[idx]
             )
-            for c in range(task.n_color_channels):
-                canvas[idx, c] = torch.where(patched == c, 1, canvas[idx, c])
-        task.problem[:, :, :, :, 0] = canvas
+            mask_union = union_masks[idx].any(dim=0)      # (H,W)  前景像素 True
+            canvas[idx][mask_union] = patched[mask_union] # 直接写颜色索引
+
+        task.problem[:, :, :,  0] = canvas
 
     logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
     logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
@@ -172,11 +178,13 @@ if __name__ == "__main__":
                 lr=0.01
             )
         else:
+            rule_layer = None
             optimizer = torch.optim.Adam(model.weights_list, lr=0.01, betas=(0.5, 0.9))
 
         # optimizer = torch.optim.Adam(model.weights_list, lr=0.01, betas=(0.5, 0.9))
 
-
+        model.rule_layer = rule_layer
+        model.use_rule   = USE_RULE_LAYER
 
         optimizers.append(optimizer)
         train_history_logger = solution_selection.Logger(task)
