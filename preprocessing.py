@@ -23,6 +23,9 @@ class Task:
         self.input_obj_masks,  self.output_obj_masks  = [], []
         self.input_obj_attrs,  self.output_obj_attrs  = [], []
 
+        self.input_attr_tensor, self.output_attr_tensor = [], []
+
+
         self.n_obj_channels = 1
 
         self.shapes = self._collect_problem_shapes(problem)
@@ -154,6 +157,15 @@ class Task:
                         self.output_obj_masks.append(obj_m)
                         self.output_obj_attrs.append(obj_a)
                     # --------------------------------
+                    
+                    from utils.attr_registry import build_attr_tensor
+                    # ...
+                    obj_attrs_tensor = build_attr_tensor(obj_d)   # (N,D)
+                    if mode=='input':
+                        self.input_attr_tensor.append(obj_attrs_tensor)
+                    else:
+                        self.output_attr_tensor.append(obj_attrs_tensor)
+
 
 
                     # ---------- 原 pipeline ----------
@@ -166,7 +178,7 @@ class Task:
                     else:
                         union_mask = np.zeros((H, W), dtype=np.int8)
 
-                    union_mask = union_mask[:H, :W]  
+                    union_mask = union_mask[:H, :W]
 
                     mode_num = 0 if mode == 'input' else 1
 

@@ -10,7 +10,10 @@ import multitensor_systems
 import layers
 import solution_selection
 import visualization
+# from layers.sparse_rule_layer import SparseRuleLayer
 
+from rulelayers.sparse_rule_layer import SparseRuleLayer
+from utils.attr_registry import build_attr_tensor
 
 """
 This file trains a model for every ARC-AGI task in a split.
@@ -47,6 +50,21 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
     """
 
     optimizer.zero_grad()
+
+    if USE_RULE_LAYER:
+        canvas       = task.problem[:, :, :, :, 0]        # (N,C,H,W)
+        union_masks  = task.input_obj_masks
+        attr_tensors = task.input_attr_tensor
+        for idx in range(task.n_examples):
+            patched = rule_layer(
+                canvas[idx, 0].clone(),
+                attr_tensors[idx].to(device),
+                union_masks[idx].to(device)
+            )
+            for c in range(task.n_color_channels):
+                canvas[idx, c] = torch.where(patched == c, 1, canvas[idx, c])
+        task.problem[:, :, :, :, 0] = canvas
+
     logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
     logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
 
@@ -103,7 +121,16 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
             logprob = torch.logsumexp(coefficient*logprobs, dim=(0,1))/coefficient  # Aggregate for all possible grid sizes
             reconstruction_error = reconstruction_error - logprob
 
-    loss = total_KL + 10*reconstruction_error
+    # loss = total_KL + 10*reconstruction_error
+    if USE_RULE_LAYER:
+        sparsity_penalty = 1e-4 * rule_layer.selector(
+            attr_tensors[0]).abs().mean()
+    else:
+        sparsity_penalty = 0.0
+
+    loss = 2*reconstruction_error + total_KL + sparsity_penalty
+
+
     loss.backward()
     optimizer.step()
     optimizer.zero_grad()
@@ -134,7 +161,23 @@ if __name__ == "__main__":
     for task in tasks:
         model = arc_compressor.ARCCompressor(task)
         models.append(model)
-        optimizer = torch.optim.Adam(model.weights_list, lr=0.01, betas=(0.5, 0.9))
+
+
+        USE_RULE_LAYER = True        # 改 False → 彻底关闭规则层
+        if USE_RULE_LAYER:
+            attr_dim   = build_attr_tensor(task.input_obj_dicts[0]).shape[1]
+            rule_layer = SparseRuleLayer(attr_dim, K_ops=8, temp=1.0)
+            optimizer  = torch.optim.Adam(
+                list(model.parameters()) + list(rule_layer.parameters()),
+                lr=0.01
+            )
+        else:
+            optimizer = torch.optim.Adam(model.weights_list, lr=0.01, betas=(0.5, 0.9))
+
+        # optimizer = torch.optim.Adam(model.weights_list, lr=0.01, betas=(0.5, 0.9))
+
+
+
         optimizers.append(optimizer)
         train_history_logger = solution_selection.Logger(task)
         visualization.plot_problem(train_history_logger)
