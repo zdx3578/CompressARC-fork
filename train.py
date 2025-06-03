@@ -261,14 +261,14 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
 
     if train_step < reconstrucstep:         gamma, beta, lam = 10, 1, 0.0
     elif train_step < 800:       # linear anneal
-        frac  = (train_step)/650
+        frac  = (train_step)/950
         gamma = 10 - 5*frac
         beta  = 1  + 1*frac
-        lam   = 3e-4 * frac
+        lam   = 1 * frac
     else:
-        gamma = 2
-        beta  = 4
-        lam   = 1e-3
+        gamma = 8
+        beta  = 2
+        lam   = 5
 
     loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
 
@@ -397,13 +397,14 @@ if __name__ == "__main__":
 
             # 在指定步数保存检查点
             if (train_step + 1) in args.save_steps:
-                save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
+                pass
+                # save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
 
             if (train_step+1) % 59 == 0:
                 visualization.plot_solution(train_history_logger,
                     fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.png')
-                visualization.plot_solution(train_history_logger,
-                    fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.pdf')
+                # visualization.plot_solution(train_history_logger,
+                #     fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.pdf')
 
         pbar.close()  # 确保进度条正确关闭
 
