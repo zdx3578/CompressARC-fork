@@ -1,4 +1,5 @@
 import time
+import argparse
 
 import numpy as np
 import torch
@@ -18,6 +19,56 @@ from utils.attr_registry import build_attr_tensor
 
 import os
 import sys
+
+# 权重保存和加载功能
+def save_checkpoint(model, optimizer, train_step, task_name, folder):
+    """保存训练检查点"""
+    checkpoint = {
+        'train_step': train_step,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'task_name': task_name
+    }
+
+    # 如果模型有rule_layer，也要保存
+    if hasattr(model, 'rule_layer') and model.rule_layer is not None:
+        checkpoint['rule_layer_state_dict'] = model.rule_layer.state_dict()
+        checkpoint['use_rule'] = model.use_rule
+
+    checkpoint_path = os.path.join(folder, f'checkpoint_step_{train_step}.pth')
+    torch.save(checkpoint, checkpoint_path)
+    print(f"Checkpoint saved at step {train_step}: {checkpoint_path}")
+    return checkpoint_path
+
+def load_checkpoint(checkpoint_path, model, optimizer, device):
+    """加载训练检查点"""
+    if not os.path.exists(checkpoint_path):
+        print(f"Checkpoint file not found: {checkpoint_path}")
+        return 0
+
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    # 如果有rule_layer，也要加载
+    if 'rule_layer_state_dict' in checkpoint and hasattr(model, 'rule_layer') and model.rule_layer is not None:
+        model.rule_layer.load_state_dict(checkpoint['rule_layer_state_dict'])
+        model.use_rule = checkpoint.get('use_rule', True)
+
+    train_step = checkpoint['train_step']
+    print(f"Checkpoint loaded from step {train_step}: {checkpoint_path}")
+    return train_step
+
+def find_latest_checkpoint(folder, task_name):
+    """查找最新的检查点文件"""
+    checkpoint_files = [f for f in os.listdir(folder) if f.startswith('checkpoint_step_') and f.endswith('.pth')]
+    if not checkpoint_files:
+        return None
+
+    # 按步数排序，找到最新的
+    steps = [int(f.split('_')[2].split('.')[0]) for f in checkpoint_files]
+    latest_step = max(steps)
+    return os.path.join(folder, f'checkpoint_step_{latest_step}.pth')
 
 possible_pypaths = [
     '/kaggle/input/3-28arcdsl'
@@ -240,6 +291,15 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
 
 
 if __name__ == "__main__":
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description='Train ARC model with checkpoint support')
+    parser.add_argument('--resume', action='store_true', help='Resume training from latest checkpoint')
+    parser.add_argument('--checkpoint', type=str, help='Specific checkpoint path to resume from')
+    parser.add_argument('--task_name', type=str, default='0a2355a6', help='Task name to train')
+    parser.add_argument('--save_steps', nargs='+', type=int, default=[400, 800, 1200, 1600, 2000],
+                       help='Steps at which to save checkpoints')
+    args = parser.parse_args()
+
     start_time = time.time()
     torch.set_default_device('cuda')
     task_nums = list(range(1000))
@@ -248,12 +308,10 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = "cpu"
 
-
     # Preprocess all tasks, make models, optimizers, and loggers. Make plots.
     # tasks = preprocessing.preprocess_tasks(split, task_nums)
 
-
-    task_name = '0a2355a6'
+    task_name = args.task_name
     folder = task_name + '/'
     print('Performing a training run on task', task_name,
           'and placing the results in', folder)
@@ -304,11 +362,26 @@ if __name__ == "__main__":
     # Train the models one by one
     for i, (task, model, optimizer, train_history_logger) in enumerate(zip(tasks, models, optimizers, train_history_loggers)):
         n_iterations = 2000
-        print(f"\nTraining task {i+1}/{len(tasks)}: {task_name}")
+        start_step = 0
+
+        # 检查是否需要从检查点恢复
+        if args.resume or args.checkpoint:
+            if args.checkpoint:
+                checkpoint_path = args.checkpoint
+            else:
+                checkpoint_path = find_latest_checkpoint(folder, task_name)
+
+            if checkpoint_path:
+                start_step = load_checkpoint(checkpoint_path, model, optimizer, device)
+                print(f"Resuming training from step {start_step}")
+            else:
+                print("No checkpoint found, starting from beginning")
+
+        print(f"\nTraining task {i+1}/{len(tasks)}: {task_name} (from step {start_step})")
 
         # 创建tqdm进度条
-        pbar = tqdm(range(n_iterations), desc=f"Training {task_name}",
-                   unit="step", ncols=100, leave=True)
+        pbar = tqdm(range(start_step, n_iterations), desc=f"Training {task_name}",
+                   unit="step", ncols=100, leave=True, initial=start_step, total=n_iterations)
 
         for train_step in pbar:
             take_step(task, model, optimizer, train_step, train_history_logger)
@@ -321,6 +394,10 @@ if __name__ == "__main__":
                     'step': train_step + 1,
                     'loss': f"{last_loss:.4f}" if isinstance(last_loss, (int, float)) else "N/A"
                 })
+
+            # 在指定步数保存检查点
+            if (train_step + 1) in args.save_steps:
+                save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
 
             if (train_step+1) % 59 == 0:
                 visualization.plot_solution(train_history_logger,
