@@ -39,11 +39,14 @@ class Logger:
 
     def log(self, train_step, logits, x_mask, y_mask, KL_amounts, KL_names, total_KL, reconstruction_error, loss):
         """Logs training progress and tracks solutions from one forward pass."""
-        if train_step == 0:
-            self.KL_curves = {KL_name: [] for KL_name in KL_names}
+        if train_step == 0 or not hasattr(self, 'KL_curves'):
+            self.KL_curves = {str(KL_name): [] for KL_name in KL_names}
 
         for KL_amount, KL_name in zip(KL_amounts, KL_names):
-            self.KL_curves[KL_name].append(float(KL_amount.detach().sum().cpu().numpy()))
+            KL_name_str = str(KL_name)
+            if KL_name_str not in self.KL_curves:
+                self.KL_curves[KL_name_str] = []
+            self.KL_curves[KL_name_str].append(float(KL_amount.detach().sum().cpu().numpy()))
 
         self.total_KL_curve.append(float(total_KL.detach().cpu().numpy()))
         self.reconstruction_error_curve.append(float(reconstruction_error.detach().cpu().numpy()))

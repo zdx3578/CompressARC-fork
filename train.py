@@ -21,39 +21,60 @@ import os
 import sys
 
 # 权重保存和加载功能
-def save_checkpoint(model, optimizer, train_step, task_name, folder):
+def save_checkpoint(model, optimizer, train_step, task_name, folder, rule_layer=None):
     """保存训练检查点"""
     checkpoint = {
         'train_step': train_step,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
         'task_name': task_name
     }
 
-    # 如果模型有rule_layer，也要保存
-    if hasattr(model, 'rule_layer') and model.rule_layer is not None:
-        checkpoint['rule_layer_state_dict'] = model.rule_layer.state_dict()
-        checkpoint['use_rule'] = model.use_rule
+    # ARCCompressor使用weights_list而不是state_dict
+    if hasattr(model, 'weights_list'):
+        checkpoint['model_weights_list'] = [w.clone() for w in model.weights_list]
+    else:
+        # 如果是标准的nn.Module
+        checkpoint['model_state_dict'] = model.state_dict()
+
+    # 保存优化器状态
+    if optimizer is not None:
+        checkpoint['optimizer_state_dict'] = optimizer.state_dict()
+
+    # 如果有rule_layer，也要保存
+    if rule_layer is not None:
+        checkpoint['rule_layer_state_dict'] = rule_layer.state_dict()
 
     checkpoint_path = os.path.join(folder, f'checkpoint_step_{train_step}.pth')
     torch.save(checkpoint, checkpoint_path)
     print(f"Checkpoint saved at step {train_step}: {checkpoint_path}")
     return checkpoint_path
 
-def load_checkpoint(checkpoint_path, model, optimizer, device):
+def load_checkpoint(checkpoint_path, model, optimizer, device, rule_layer=None):
     """加载训练检查点"""
     if not os.path.exists(checkpoint_path):
         print(f"Checkpoint file not found: {checkpoint_path}")
         return 0
 
     checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    # 加载ARCCompressor的weights_list
+    if hasattr(model, 'weights_list') and 'model_weights_list' in checkpoint:
+        loaded_weights = checkpoint['model_weights_list']
+        if len(loaded_weights) == len(model.weights_list):
+            for i, weight in enumerate(loaded_weights):
+                model.weights_list[i].data.copy_(weight.data)
+        else:
+            print(f"Warning: Weight list length mismatch. Model: {len(model.weights_list)}, Checkpoint: {len(loaded_weights)}")
+    elif 'model_state_dict' in checkpoint:
+        # 如果是标准的nn.Module
+        model.load_state_dict(checkpoint['model_state_dict'])
+
+    # 加载优化器状态
+    if optimizer is not None and 'optimizer_state_dict' in checkpoint:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # 如果有rule_layer，也要加载
-    if 'rule_layer_state_dict' in checkpoint and hasattr(model, 'rule_layer') and model.rule_layer is not None:
-        model.rule_layer.load_state_dict(checkpoint['rule_layer_state_dict'])
-        model.use_rule = checkpoint.get('use_rule', True)
+    if rule_layer is not None and 'rule_layer_state_dict' in checkpoint:
+        rule_layer.load_state_dict(checkpoint['rule_layer_state_dict'])
 
     train_step = checkpoint['train_step']
     print(f"Checkpoint loaded from step {train_step}: {checkpoint_path}")
@@ -396,9 +417,9 @@ if __name__ == "__main__":
                 })
 
             # 在指定步数保存检查点
-            if (train_step + 1) in args.save_steps:
-                pass
-                # save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
+            if (train_step + 1) in [1]:
+                # pass
+                save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
 
             if (train_step+1) % 59 == 0:
                 visualization.plot_solution(train_history_logger,
