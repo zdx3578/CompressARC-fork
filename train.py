@@ -15,13 +15,15 @@ import visualization
 # from layers.sparse_rule_layer import SparseRuleLayer
 
 from rulelayers.sparse_rule_layer import SparseRuleLayer
+from utils import attr_registry
 from utils.attr_registry import build_attr_tensor
+
 
 import os
 import sys
 
-debugstep = 39
-
+debugstep = 49
+reconstrucstep = 300
 
 def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_name, rule_layer=None, USE_RULE_LAYER=False):
     """
@@ -30,7 +32,7 @@ def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_nam
     import matplotlib.pyplot as plt
     import numpy as np
 
-    if train_step % debugstep != 0:  # 只在特定步数输出
+    if (train_step+1) % debugstep != 0:  # 只在特定步数输出
         return
 
     print(f"\n=== DEBUG: Train Examples Prediction at Step {train_step+1} ===")
@@ -66,7 +68,7 @@ def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_nam
         # 4. 最终预测（应用规则后）
         final_pred = pred_idx[train_idx, :, :, 1].cpu().numpy()
         axes[train_idx, 3].imshow(final_pred, cmap='tab10', vmin=0, vmax=9)
-        rule_status = "(+Rule)" if USE_RULE_LAYER and rule_layer is not None and train_step >= 400 else "(NoRule)"
+        rule_status = "(+Rule)" if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep else "(NoRule)"
         axes[train_idx, 3].set_title(f'Train {train_idx}: Final {rule_status}')
         axes[train_idx, 3].axis('off')
 
@@ -81,7 +83,7 @@ def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_nam
         print(f"Train Example {train_idx}:")
         print(f"  Raw Network Accuracy: {raw_acc:.3f}")
         print(f"  Final Accuracy: {final_acc:.3f}")
-        if USE_RULE_LAYER and rule_layer is not None and train_step >= 400:
+        if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep:
             print(f"  Rule Improvement: {final_acc - raw_acc:+.3f}")
 
     plt.tight_layout()
@@ -91,7 +93,7 @@ def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_nam
     print(f"Debug visualization saved: {debug_fname}")
 
     # 如果使用规则层，输出规则分析
-    if USE_RULE_LAYER and rule_layer is not None and train_step >= 400:
+    if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep:
         debug_rule_analysis(task, rule_layer, train_step)
 
 def debug_rule_analysis(task, rule_layer, train_step):
@@ -244,7 +246,7 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # USE_RULE_LAYER = True
-reconstrucstep = 400
+
 
 def mask_select_logprobs(mask, length):
     """
@@ -271,6 +273,56 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
         train_history_logger (Logger): A logger object used for logging the forward pass outputs
                 of the model, as well as accuracy and other things.
     """
+
+    if (train_step == 0) or ((train_step + 1) % debugstep == 0):                   # 只跑一次
+        idx_sample = 0                        # 第一个 train 样例
+
+        # -- ① holes one-hot -----------------------------
+        start = attr_registry.key_index("holes")
+        dim   = 9                             # 若改成 5，改这里
+        holes_vec = task.output_attr_tensor[idx_sample][:, start:start+dim]
+        print("[CHK] holes row0-4 =", holes_vec[:5].tolist())
+
+        # -- ② selector argmax ---------------------------
+        sel_logits = model.rule_layer.selector(task.output_attr_tensor[idx_sample])
+        sel = sel_logits.softmax(-1).argmax(-1)            # (N_obj,)
+        print("[CHK] selector argmax =", sel[:5].tolist())
+
+        # -- ③ color id of chosen op ---------------------
+        raw_param = model.rule_layer.param_head(task.output_attr_tensor[idx_sample])
+        K = 8
+        # P = raw_param.shape[1] // K
+        # raw_param = raw_param.view(-1, K, P)               # (N_obj, K, P)
+        # color_tensor = raw_param[
+        #     torch.arange(len(sel), device=raw_param.device), sel, 0
+        # ]
+        # color_ids = color_tensor.softmax(-1).argmax(-1)
+        # color_list = color_ids.cpu().view(-1).tolist()
+        # print("[CHK] predicted colors per object:", color_list[:5])
+
+        P = 10                                       # 每 op 10 维
+        raw_param = raw_param.view(-1, K, P)         # (N_obj,K,10)
+        color_logits = raw_param[
+            torch.arange(len(sel), device=raw_param.device), sel, :
+        ]                                            # (N_obj,10)
+        color_ids = color_logits.softmax(-1).argmax(-1).cpu().tolist()
+        print("Predicted colors per obj:", color_ids[:5])
+
+        # raw_param = model.rule_layer.param_head(task.output_attr_tensor[idx_sample])  # (N_obj, K*10)
+        # K = model.rule_layer.K_ops
+        # P = 10                                           # 固定 10
+        # raw_param = raw_param.view(-1, K, P)             # (N_obj, K, 10)
+
+        # color_logits = raw_param[
+        #     torch.arange(len(sel), device=raw_param.device), sel, :
+        # ]                                                 # (N_obj,10)
+        # color_ids = color_logits.softmax(-1).argmax(-1).cpu().tolist()
+        # print("Predicted colors per object:", color_ids[:5])
+
+
+
+
+
 
     optimizer.zero_grad()
     # optimizer.zero_grad()
@@ -395,16 +447,16 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     #         logits_out, target_idx, reduction='sum')
 
 
-    if train_step < reconstrucstep:         gamma, beta, lam = 10, 1, 0.0
+    if train_step < reconstrucstep:         gamma, beta, lam = 15, 0.51, 0.0
     elif train_step < 800:       # linear anneal
         frac  = (train_step)/950
-        gamma = 10 - 5*frac
+        gamma = 10 - 2*frac
         beta  = 1  + 1*frac
-        lam   = 1 * frac
+        lam   = 1e-3 + 1 * frac
     else:
         gamma = 8
         beta  = 2
-        lam   = 5
+        lam   = 1e-2
 
     loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
 
@@ -477,7 +529,8 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
 
     # ──────────── Debug & 可视化 (每 debugstep step) ───────────────
-    if (train_step + 1) % debugstep == 0:
+    logits_before_ST = logits.clone()
+    if (train_step > 5) and ((train_step+1 ) % debugstep == 0) :
         # 1) 取训练样例 idx=0 的网络原输出 & 规则修正后
         raw_out   = logits_before_ST[0, :, :, 1].argmax(0)   # (H,W)
         patched   = logits[0, :, :, 1].argmax(0)             # (H,W)
@@ -526,7 +579,7 @@ if __name__ == "__main__":
     parser.add_argument('--resume', action='store_true', help='Resume training from latest checkpoint')
     parser.add_argument('--checkpoint', type=str, help='Specific checkpoint path to resume from')
     parser.add_argument('--task_name', type=str, default='0a2355a6', help='Task name to train')
-    parser.add_argument('--save_steps', nargs='+', type=int, default=[400, 800, 1200, 1600, 2000],
+    parser.add_argument('--save_steps', nargs='+', type=int, default=[2,400, 800, 1200, 1600, 2000],
                        help='Steps at which to save checkpoints')
     args = parser.parse_args()
 
@@ -626,7 +679,7 @@ if __name__ == "__main__":
                 })
 
             # 在指定步数保存检查点
-            if (train_step + 1) in [1]:
+            if (train_step + 1) in args.save_steps:
                 # pass
                 save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
 
@@ -657,9 +710,14 @@ if __name__ == "__main__":
                     print("Chosen op indices:", chosen_op)                 # 0..K-1
 
                     # 颜色 logits （第 0 参数）
-                    param_logits = model.rule_layer.param_head(attr0)[:,0] # (N_obj,K)
-                    colors = param_logits.softmax(-1).argmax(-1).cpu().tolist()
-                    print("Predicted colors per object:", colors)
+                    # param_logits = model.rule_layer.param_head(attr0)[:,0] # (N_obj,K)
+                    # colors = param_logits.softmax(-1).argmax(-1).cpu().tolist()
+                    # print("Predicted colors per object:", colors)
+                    sel = model.rule_layer.selector(attr_tensors[idx]).softmax(-1).argmax(-1)
+                    raw = model.rule_layer.param_head(attr_tensors[idx])      # (Ni,K,P)
+                    colors = raw[torch.arange(len(sel)), sel, 0]               # 取被选 op 的 color
+                    print(" ！ ！ ！ ！ Predicted colors per object:", colors.tolist())
+
 
         if USE_RULE_LAYER:
             attr0  = task.input_attr_tensor[0].to(device)

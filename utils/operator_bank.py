@@ -7,12 +7,58 @@
 import torch
 import torch.nn.functional as F
 
+
+
 OP_BANK = {}
+
 def register(name):
     def _decor(f):
         OP_BANK[name] = f
         return f
     return _decor
+
+# ---------- recolor_mask 放最前 ----------
+@register("recolor_mask")
+def op_recolor_mask(canvas, mask, params):
+    """
+    params: (>=10,) 前 10 维为颜色 logits
+    """
+    # 取颜色 id 0‥9
+    color_logits = params[:10]
+    color_id = color_logits.softmax(0).argmax().clamp(0, 9)
+
+    # 若 canvas 被展平 → reshape 回 (H,W)
+    if canvas.dim() == 1 and canvas.numel() == mask.numel():
+        canvas = canvas.view_as(mask)
+
+    canvas = canvas.clone()
+    canvas[mask] = color_id
+    return canvas
+
+
+# @register("recolor_mask")
+# def op_recolor_mask(canvas, mask, params):
+#     """
+#     重上色算子：把 mask 内像素改为 params 指定颜色
+#     canvas : (H,W) int tensor  *或* 展平 1-D
+#     mask   : (H,W) bool tensor
+#     params : (...>=1)  第 0 维为颜色 logits
+#     """
+#     # --- 取颜色 id ---
+#     color = params[0].softmax(0).argmax().long().clamp(0, 9)
+
+#     # --- 确保形状匹配 ---
+#     if canvas.dim() == 1:
+#         if canvas.numel() == mask.numel():
+#             canvas = canvas.view_as(mask)
+#         else:  # 兜底：直接 reshape 失败，用 debug
+#             raise ValueError(f"[recolor_mask] shape mismatch: "
+#                              f"canvas.numel={canvas.numel()} vs mask={mask.shape}")
+
+#     # --- 上色 ---
+#     canvas = canvas.clone()          # 避免就地影响上游
+#     canvas[mask] = color
+#     return canvas
 
 # ─── 示例算子 ──────────────────────────────────
 @register("fill_line")
@@ -57,29 +103,7 @@ def op_draw_cross(canvas, mask, params):
 
 # TODO: 更多算子
 
-@register("recolor_mask")
-def op_recolor_mask(canvas, mask, params):
-    """
-    重上色算子：把 mask 内像素改为 params 指定颜色
-    canvas : (H,W) int tensor  *或* 展平 1-D
-    mask   : (H,W) bool tensor
-    params : (...>=1)  第 0 维为颜色 logits
-    """
-    # --- 取颜色 id ---
-    color = params[0].softmax(0).argmax().long().clamp(0, 9)
 
-    # --- 确保形状匹配 ---
-    if canvas.dim() == 1:
-        if canvas.numel() == mask.numel():
-            canvas = canvas.view_as(mask)
-        else:  # 兜底：直接 reshape 失败，用 debug
-            raise ValueError(f"[recolor_mask] shape mismatch: "
-                             f"canvas.numel={canvas.numel()} vs mask={mask.shape}")
-
-    # --- 上色 ---
-    canvas = canvas.clone()          # 避免就地影响上游
-    canvas[mask] = color
-    return canvas
 
 
 

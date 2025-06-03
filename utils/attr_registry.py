@@ -24,6 +24,12 @@ def attr_holes(obj):
     onehot = np.zeros(9, dtype=np.float32)
     onehot[min(obj["holes"], 8)] = 1.0
     return onehot
+# @register("holes")
+# def attr_holes(obj):
+#     vec = np.zeros(5, dtype=np.float32)
+#     vec[min(obj["holes"], 4)] = 1.0
+#     return vec
+
 
 @register("is_rect")
 def attr_is_rect(obj):
@@ -50,3 +56,21 @@ def build_attr_tensor(obj_dicts, keys=None):
         cols = [REGISTRY[k](obj) for k in keys]
         feats.append(np.concatenate(cols, axis=0))
     return torch.tensor(np.stack(feats, axis=0), dtype=torch.float32).to(torch.get_default_device())
+
+# ──────────────────────────────────────────────
+#  Utility: get start index of a registered key
+# ──────────────────────────────────────────────
+def key_index(key: str) -> int:
+    """
+    Return the starting column index of the given key
+    in the concatenated feature vector.
+    """
+    idx = 0
+    for k, fn in REGISTRY.items():
+        if k == key:
+            return idx
+        # we need a fake object to know feature length
+        # use minimal dummy obj with required fields
+        dummy = {"bbox": (0,0,0,0), "size": 1, "holes": 0, "color": 0}
+        idx += len(fn(dummy))
+    raise KeyError(f"{key} not in attr_registry")

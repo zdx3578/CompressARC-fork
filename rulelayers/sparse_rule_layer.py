@@ -13,12 +13,13 @@ class SparseRuleLayer(nn.Module):
         # self.K = K_ops
         self.attr_dim = attr_dim
         self.temp = temp
-        self.n_params = 4
+        self.n_params = 10
 
         self.K = min(K_ops, len(OP_BANK))
         self.op_names = list(OP_BANK.keys())[:self.K]
         self.selector = nn.Linear(attr_dim, self.K)
         self.param_head = nn.Linear(attr_dim, self.K * self.n_params)
+        
 
         # self.selector = nn.Linear(attr_dim, K_ops)       # 选算子
         # self.param_head = nn.Linear(attr_dim, K_ops*4)   # 每算子最多 4 个参数
