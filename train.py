@@ -57,7 +57,7 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # USE_RULE_LAYER = True
-
+reconstrucstep = 400
 
 def mask_select_logprobs(mask, length):
     """
@@ -89,13 +89,14 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
     # optimizer.zero_grad()
     logits, x_mask, y_mask, KL_amounts, KL_names, = model.forward()
     logits = torch.cat([torch.zeros_like(logits[:,:1,:,:]), logits], dim=1)  # add black color to logits
+    pred_idx = logits.argmax(dim=1)
 
     # ── 2) RuleLayer 仅对“网络输出”做后处理 ────────────
     rule_layer = getattr(model, "rule_layer", None)
     USE_RULE_LAYER = getattr(model, "use_rule", False)
-    if USE_RULE_LAYER and rule_layer is not None:
+    if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep:
         # a) 取网络初步颜色索引
-        pred_idx = logits.argmax(dim=1)                    # (N,H,W)
+        # pred_idx = logits.argmax(dim=1)                    # (N,H,W)
 
         # b) 逐样例裁剪掩码并调用 RuleLayer
         # for idx in range(task.n_examples):
@@ -119,11 +120,18 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
             pred_idx[idx, :, :, 1] = pred_out
 
         # c) one-hot + straight-through 写回 logits
+        # one_hot 得到 (N,H,W,2,C) → 重新排轴 (N,C,H,W,2)
+        # patched_onehot = torch.nn.functional.one_hot(
+        #     pred_idx, logits.shape[1]).permute(0, 4, 1, 2, 3).float()
+        # logits = patched_onehot.detach() + logits - logits.detach()
         patched_onehot = torch.nn.functional.one_hot(
-            pred_idx, logits.shape[1]).permute(0, 3, 1, 2).float()
-        logits = patched_onehot.detach() + logits - logits.detach()
+            pred_idx, logits.shape[1]).permute(0, 4, 1, 2, 3).float()
+        logits = logits + (patched_onehot - patched_onehot.detach())
 
     # ── logits 现已包含 RuleLayer 修改，下方重构误差照旧 ──
+    else:
+        # 若<100步，仅用原 logits 预测，RuleLayer 先不介入
+        pred_idx = logits.argmax(dim=1)   # 供后面简单 CE
 
 
     # Compute the total KL loss
@@ -189,8 +197,18 @@ def take_step(task, model, optimizer, train_step, train_history_logger):
     else:
         sparsity_penalty = 0.0
 
+    #  4) 重新计算 reconstruction loss
+    # ────────────────────────────────────────────────
+    # ground-truth 颜色索引
 
-    if train_step < 350:         gamma, beta, lam = 10, 1, 0.0
+    # ---------- reconstruction error on output frame ----------
+    # logits_out  = logits[..., 1]                     # (N,C,H,W)
+    # target_idx  = task.problem[:, :, :, 1].to(logits.device)  # (N,H,W)
+    # reconstruction_error = torch.nn.functional.cross_entropy(
+    #         logits_out, target_idx, reduction='sum')
+
+
+    if train_step < reconstrucstep:         gamma, beta, lam = 10, 1, 0.0
     elif train_step < 800:       # linear anneal
         frac  = (train_step)/650
         gamma = 10 - 5*frac
@@ -304,7 +322,7 @@ if __name__ == "__main__":
                     'loss': f"{last_loss:.4f}" if isinstance(last_loss, (int, float)) else "N/A"
                 })
 
-            if (train_step+1) % 99 == 0:
+            if (train_step+1) % 59 == 0:
                 visualization.plot_solution(train_history_logger,
                     fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.png')
                 visualization.plot_solution(train_history_logger,
