@@ -24,7 +24,9 @@ import os
 import sys
 
 debugstep = 40
-reconstrucstep = 260
+reconstrucstep = 300
+
+maxsteps = 2000
 
 def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_name, rule_layer=None, USE_RULE_LAYER=False):
     """
@@ -411,7 +413,7 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
                     logprob = x_logprobs[x_offset] - x_log_partition + y_logprobs[y_offset] - y_log_partition  # given the correct grid size,
                     logits_crop = logits_slice[:,x_offset:x_offset+output_shape[0],y_offset:y_offset+output_shape[1]]  # c, x, y
                     target_crop = problem_slice[:output_shape[0],:output_shape[1]]  # x, y
-                    logprob = logprob - 7 * ( torch.nn.functional.cross_entropy(logits_crop[None,...], target_crop[None,...], reduction='sum')  ) # calculate the error for the colors.
+                    logprob = logprob - 1 * ( torch.nn.functional.cross_entropy(logits_crop[None,...], target_crop[None,...], reduction='sum')  ) # calculate the error for the colors.
                     logprobs[x_offset].append(logprob)
             logprobs = torch.stack([torch.stack(logprobs_, dim=0) for logprobs_ in logprobs], dim=0)  # x, y
             if grid_size_uncertain:
@@ -444,14 +446,14 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
     if train_step < reconstrucstep:         gamma, beta, lam = 15, 0.51, 0.0
     elif train_step < 800:       # linear anneal
-        frac  = (train_step)/950
-        gamma = 10 - 2*frac
-        beta  = 1  + 1*frac
-        lam   = 1e-3 + 1 * frac
+        frac  = (train_step)/1110
+        gamma = 10
+        beta  = 1  + 0.5*frac
+        lam   = (5e-4 ) * frac
     else:
-        gamma = 8
+        gamma = 10
         beta  = 2
-        lam   = 1e-2
+        lam   = 1e-3
 
     loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
 
@@ -461,12 +463,12 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     optimizer.step()
     optimizer.zero_grad()
 
-    debug_train_predictions(
-        task, logits, pred_idx, train_step,
-        folder=task_name + '/',  # 需要传入folder参数
-        task_name=task_name,     # 需要传入task_name参数
-        rule_layer=rule_layer,
-        USE_RULE_LAYER=USE_RULE_LAYER
+    # debug_train_predictions(
+    #     task, logits, pred_idx, train_step,
+    #     folder=task_name + '/',  # 需要传入folder参数
+    #     task_name=task_name,     # 需要传入task_name参数
+    #     rule_layer=rule_layer,
+    #     USE_RULE_LAYER=USE_RULE_LAYER
     )
 
     if (train_step+1) % debugstep == 0:
@@ -641,7 +643,7 @@ if __name__ == "__main__":
 
     # Train the models one by one
     for i, (task, model, optimizer, train_history_logger) in enumerate(zip(tasks, models, optimizers, train_history_loggers)):
-        n_iterations = 2000
+        n_iterations = maxsteps
         start_step = 0
 
         # 检查是否需要从检查点恢复
