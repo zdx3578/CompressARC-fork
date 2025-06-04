@@ -20,10 +20,11 @@ def register(name):
 
 @register("recolor_mask")
 def op_recolor_mask(canvas, mask, params, temp=0.6):
-    logits = params[:10]                                   # (10,)
+    C = params.shape[0]
+    logits = params[:C]                                   # (10,)
     y      = torch.nn.functional.gumbel_softmax(
                 logits, tau=temp, hard=True)               # one-hot (hard ST)
-    palette = torch.arange(10, device=logits.device, dtype=logits.dtype)
+    palette = torch.arange(C, device=logits.device, dtype=logits.dtype)
     # color_val = (y * palette).sum()                        # still differentiable
 
     # # --- dtype & bounds ---
@@ -34,7 +35,7 @@ def op_recolor_mask(canvas, mask, params, temp=0.6):
     if canvas.dim() == 1 and canvas.numel() == mask.numel():
         canvas = canvas.view_as(mask)
     canvas = canvas.clone()
-    canvas[mask] = color_val.to(canvas.dtype)   
+    canvas[mask] = color_val.to(canvas.dtype)
     return canvas
 
 

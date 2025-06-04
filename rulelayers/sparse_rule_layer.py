@@ -8,12 +8,12 @@ class SparseRuleLayer(nn.Module):
     输入: attr_tensor (N_obj, D) , obj_masks (N_obj,H,W)
     输出: patched_grid (H,W)
     """
-    def __init__(self, attr_dim, K_ops=8, hidden=64, temp=1.0):
+    def __init__(self, attr_dim, n_colors, K_ops=8,  temp=1.0):
         super().__init__()
         # self.K = K_ops
         self.attr_dim = attr_dim
         self.temp = temp
-        self.n_params = 10
+        self.n_params = n_colors
 
         self.K = min(K_ops, len(OP_BANK))
         self.op_names = list(OP_BANK.keys())[:self.K]

@@ -23,8 +23,8 @@ from utils.attr_registry import build_attr_tensor
 import os
 import sys
 
-debugstep = 30
-reconstrucstep = 60
+debugstep = 40
+reconstrucstep = 260
 
 def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_name, rule_layer=None, USE_RULE_LAYER=False):
     """
@@ -291,17 +291,13 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
         # -- ③ color id of chosen op ---------------------
         raw_param = model.rule_layer.param_head(task.output_attr_tensor[idx_sample])
+        #! K = model.rule_layer.K_ops
         K = 8
         # P = raw_param.shape[1] // K
-        # raw_param = raw_param.view(-1, K, P)               # (N_obj, K, P)
-        # color_tensor = raw_param[
-        #     torch.arange(len(sel), device=raw_param.device), sel, 0
-        # ]
-        # color_ids = color_tensor.softmax(-1).argmax(-1)
-        # color_list = color_ids.cpu().view(-1).tolist()
-        # print("[CHK] predicted colors per object:", color_list[:5])
 
-        P = 10                                       # 每 op 10 维
+
+        # P = 10                                       # 每 op 10 维
+        P = model.rule_layer.n_params
         raw_param = raw_param.view(-1, K, P)         # (N_obj,K,10)
         color_logits = raw_param[
             torch.arange(len(sel), device=raw_param.device), sel, :
@@ -550,6 +546,8 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
                     task.output_attr_tensor[0]).softmax(-1).argmax(-1)
             col = model.rule_layer.param_head(
                     task.output_attr_tensor[0])[:,0].softmax(-1).argmax(-1)
+            print(f" color logits shape:", model.rule_layer.param_head(
+                task.output_attr_tensor[0]).shape)
             print(f"[DBG {train_step}] selector idx per obj:", sel.tolist())
             print(f"[DBG {train_step}] color pred per obj :", col.tolist())
 
@@ -613,7 +611,7 @@ if __name__ == "__main__":
         USE_RULE_LAYER = True        # 改 False → 彻底关闭规则层
         if USE_RULE_LAYER:
             attr_dim   = build_attr_tensor(task.input_obj_dicts[0]).shape[1]
-            rule_layer = SparseRuleLayer(attr_dim, K_ops=8, temp=1.0).to(device)
+            rule_layer = SparseRuleLayer(attr_dim, n_colors=task.n_color_channels, K_ops=8, temp=1.0).to(device)
             optimizer  = torch.optim.Adam(
                 model.weights_list + list(rule_layer.parameters()),
                 lr=0.01
