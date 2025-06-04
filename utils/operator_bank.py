@@ -19,7 +19,7 @@ def register(name):
 
 
 @register("recolor_mask")
-def op_recolor_mask(canvas, mask, params, temp=0.6):
+def op_recolor_mask(canvas, mask, params, temp=1, hard=True):
     C = params.shape[0]
     logits = params[:C]                                   # (10,)
     y      = torch.nn.functional.gumbel_softmax(

@@ -444,18 +444,39 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     #         logits_out, target_idx, reduction='sum')
 
 
-    if train_step < reconstrucstep:         gamma, beta, lam = 15, 0.51, 0.0
-    elif train_step < 800:       # linear anneal
-        frac  = (train_step)/1110
-        gamma = 10
-        beta  = 1  + 0.5*frac
-        lam   = (5e-4 ) * frac
-    else:
-        gamma = 10
-        beta  = 2
-        lam   = 1e-3
+    # if train_step < reconstrucstep:         gamma, beta, lam = 15, 0.51, 0.0
+    # elif train_step < 800:       # linear anneal
+    #     frac  = (train_step)/1110
+    #     gamma = 10
+    #     beta  = 1  + 0.5*frac
+    #     lam   = (5e-4 ) * frac
+    # else:
+    #     gamma = 10
+    #     beta  = 2
+    #     lam   = 1e-3
 
-    loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
+    # loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
+
+    if train_step < 150:
+        gamma, beta, lam, temp, hard = 10, 1, 0.0, 2.0, False
+    elif train_step < 300:
+        frac = (train_step-150)/150
+        gamma = 10 - 5*frac
+        beta  = 1 + 1*frac
+        lam   = 1e-3 * frac
+        temp, hard = 2.0, False
+    elif train_step < 600:
+        frac = (train_step-300)/300
+        gamma = 5 - 3*frac
+        beta  = 2 + 2*frac
+        lam   = 1e-3 + 2e-3*frac
+        temp, hard = 1.0, True
+    else:
+        gamma, beta, lam, temp, hard = 2, 4, 3e-3, 1.0, True
+
+    model.rule_layer.temp = temp
+    model.rule_layer.hard = hard
+    loss = gamma*reconstruction_error + beta*total_KL + lam*sparsity_penalty
 
 
 
@@ -469,7 +490,7 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     #     task_name=task_name,     # 需要传入task_name参数
     #     rule_layer=rule_layer,
     #     USE_RULE_LAYER=USE_RULE_LAYER
-    )
+    # )
 
     if (train_step+1) % debugstep == 0:
         print(f"\n=== Train Examples Debug at Step {train_step+1} ===")
@@ -551,7 +572,7 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
             print(f" color logits shape:", model.rule_layer.param_head(
                 task.output_attr_tensor[0]).shape)
             print(f"[DBG {train_step}] selector idx per obj:", sel.tolist())
-            print(f"[DBG {train_step}] color pred per obj :", col.tolist())
+            # print(f"[DBG {train_step}] color pred per obj :", col.tolist())
 
         # 4) 现有工具：直接把 logger sample 图也存一下
         visualization.plot_solution(
