@@ -19,72 +19,22 @@ def register(name):
 
 
 @register("recolor_mask")
-def op_recolor_mask(canvas, mask, params, temp=1.0, hard=True):
-    """
-    Differentiable recolor with Gumbel-Softmax.
-    params[ :10 ] : color logits
-    """
-    logits = params[:10]
-
-    # --- ① 采样 / 近似 one-hot ---
-    y = torch.nn.functional.gumbel_softmax(
-            logits, tau=temp, hard=hard)      # (10,)
-
-    # --- ② 生成颜色混合 ---
-    # 把颜色 0‥9 映射为同形标量，再 sum(ci * yi)
+def op_recolor_mask(canvas, mask, params, temp=0.6):
+    logits = params[:10]                                   # (10,)
+    y      = torch.nn.functional.gumbel_softmax(
+                logits, tau=temp, hard=True)               # one-hot (hard ST)
     palette = torch.arange(10, device=logits.device, dtype=logits.dtype)
-    color_val = (y * palette).sum()           # still differentiable
+    color_val = (y * palette).sum()                        # still differentiable
 
-    # --- ③ 写回画布 ---
+    # --- dtype & bounds ---
+    color_val = color_val.round().clamp(0, 9).long()       # ★ 修复
+
     if canvas.dim() == 1 and canvas.numel() == mask.numel():
         canvas = canvas.view_as(mask)
     canvas = canvas.clone()
     canvas[mask] = color_val
     return canvas
 
-
-# ---------- recolor_mask 放最前 ----------
-# @register("recolor_mask")
-# def op_recolor_mask(canvas, mask, params):
-#     """
-#     params: (>=10,) 前 10 维为颜色 logits
-#     """
-#     # 取颜色 id 0‥9
-#     color_logits = params[:10]
-#     color_id = color_logits.softmax(0).argmax().clamp(0, 9)
-
-#     # 若 canvas 被展平 → reshape 回 (H,W)
-#     if canvas.dim() == 1 and canvas.numel() == mask.numel():
-#         canvas = canvas.view_as(mask)
-
-#     canvas = canvas.clone()
-#     canvas[mask] = color_id
-#     return canvas
-
-
-# @register("recolor_mask")
-# def op_recolor_mask(canvas, mask, params):
-#     """
-#     重上色算子：把 mask 内像素改为 params 指定颜色
-#     canvas : (H,W) int tensor  *或* 展平 1-D
-#     mask   : (H,W) bool tensor
-#     params : (...>=1)  第 0 维为颜色 logits
-#     """
-#     # --- 取颜色 id ---
-#     color = params[0].softmax(0).argmax().long().clamp(0, 9)
-
-#     # --- 确保形状匹配 ---
-#     if canvas.dim() == 1:
-#         if canvas.numel() == mask.numel():
-#             canvas = canvas.view_as(mask)
-#         else:  # 兜底：直接 reshape 失败，用 debug
-#             raise ValueError(f"[recolor_mask] shape mismatch: "
-#                              f"canvas.numel={canvas.numel()} vs mask={mask.shape}")
-
-#     # --- 上色 ---
-#     canvas = canvas.clone()          # 避免就地影响上游
-#     canvas[mask] = color
-#     return canvas
 
 # ─── 示例算子 ──────────────────────────────────
 @register("fill_line")

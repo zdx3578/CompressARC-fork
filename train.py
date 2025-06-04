@@ -23,7 +23,7 @@ import os
 import sys
 
 debugstep = 49
-reconstrucstep = 300
+reconstrucstep = 260
 
 def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_name, rule_layer=None, USE_RULE_LAYER=False):
     """
@@ -306,21 +306,9 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
             torch.arange(len(sel), device=raw_param.device), sel, :
         ]                                            # (N_obj,10)
         color_ids = color_logits.softmax(-1).argmax(-1).cpu().tolist()
-        print("Predicted colors per obj:", color_ids[:5])
-
-        # raw_param = model.rule_layer.param_head(task.output_attr_tensor[idx_sample])  # (N_obj, K*10)
-        # K = model.rule_layer.K_ops
-        # P = 10                                           # 固定 10
-        # raw_param = raw_param.view(-1, K, P)             # (N_obj, K, 10)
-
-        # color_logits = raw_param[
-        #     torch.arange(len(sel), device=raw_param.device), sel, :
-        # ]                                                 # (N_obj,10)
-        # color_ids = color_logits.softmax(-1).argmax(-1).cpu().tolist()
-        # print("Predicted colors per object:", color_ids[:5])
-
-
-
+        # print("Predicted colors per obj:", color_ids[:5])
+        print(f"[DBG {train_step}] selector idx per obj:", sel.tolist())
+        print(f"[DBG {train_step}] color id per obj  :", color_ids[:5])
 
 
 
