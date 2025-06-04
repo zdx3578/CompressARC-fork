@@ -24,15 +24,17 @@ def op_recolor_mask(canvas, mask, params, temp=0.6):
     y      = torch.nn.functional.gumbel_softmax(
                 logits, tau=temp, hard=True)               # one-hot (hard ST)
     palette = torch.arange(10, device=logits.device, dtype=logits.dtype)
-    color_val = (y * palette).sum()                        # still differentiable
+    # color_val = (y * palette).sum()                        # still differentiable
 
-    # --- dtype & bounds ---
-    color_val = color_val.round().clamp(0, 9).long()       # ★ 修复
+    # # --- dtype & bounds ---
+    # color_val = color_val.round().clamp(0, 9).long()       # ★ 修复
+    color_val = (y * palette).sum().round()                # float, 0‥9
+    color_val = color_val.clamp(0, 9).long()
 
     if canvas.dim() == 1 and canvas.numel() == mask.numel():
         canvas = canvas.view_as(mask)
     canvas = canvas.clone()
-    canvas[mask] = color_val
+    canvas[mask] = color_val.to(canvas.dtype)   
     return canvas
 
 

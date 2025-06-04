@@ -19,7 +19,7 @@ class SparseRuleLayer(nn.Module):
         self.op_names = list(OP_BANK.keys())[:self.K]
         self.selector = nn.Linear(attr_dim, self.K)
         self.param_head = nn.Linear(attr_dim, self.K * self.n_params)
-        
+
 
         # self.selector = nn.Linear(attr_dim, K_ops)       # 选算子
         # self.param_head = nn.Linear(attr_dim, K_ops*4)   # 每算子最多 4 个参数
@@ -81,5 +81,8 @@ class SparseRuleLayer(nn.Module):
 
             # ---------- 合并结果 ----------
             canvas = torch.where(mask_i, canvas_tmp, canvas)
+
+            # 确保颜色值在有效范围内 (0-9)
+            canvas = torch.clamp(canvas, 0, 9)
 
         return canvas

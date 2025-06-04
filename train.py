@@ -3,6 +3,7 @@ import argparse
 
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 import preprocessing
@@ -22,8 +23,8 @@ from utils.attr_registry import build_attr_tensor
 import os
 import sys
 
-debugstep = 49
-reconstrucstep = 260
+debugstep = 30
+reconstrucstep = 60
 
 def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_name, rule_layer=None, USE_RULE_LAYER=False):
     """
@@ -340,6 +341,9 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
                 task.output_attr_tensor[idx],              # (Ni,D)
                 mask_i.to(pred_idx.device)                 # (Ni,H,W) or (H,W)
             )
+            # 确保patched的值在有效范围内
+            patched = torch.clamp(patched, 0, 9)
+
             mask_union = mask_i.any(dim=0)              # (H,W)
             pred_out[mask_union] = patched[mask_union]
 
@@ -348,9 +352,16 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
         # c) one-hot + straight-through 写回 logits
         # one_hot 得到 (N,H,W,2,C) → 重新排轴 (N,C,H,W,2)
-        # patched_onehot = torch.nn.functional.one_hot(
-        #     pred_idx, logits.shape[1]).permute(0, 4, 1, 2, 3).float()
-        # logits = patched_onehot.detach() + logits - logits.detach()
+        # 检查pred_idx的值是否在有效范围内
+        max_val = pred_idx.max().item()
+        min_val = pred_idx.min().item()
+        num_classes = logits.shape[1]
+
+        if max_val >= num_classes or min_val < 0:
+            print(f"Warning: pred_idx values out of range! min={min_val}, max={max_val}, num_classes={num_classes}")
+            # 将超出范围的值钳制到有效范围
+            pred_idx = torch.clamp(pred_idx, 0, num_classes - 1)
+
         patched_onehot = torch.nn.functional.one_hot(
             pred_idx, logits.shape[1]).permute(0, 4, 1, 2, 3).float()
         logits = logits + (patched_onehot - patched_onehot.detach())
@@ -698,13 +709,13 @@ if __name__ == "__main__":
                     print("Chosen op indices:", chosen_op)                 # 0..K-1
 
                     # 颜色 logits （第 0 参数）
-                    # param_logits = model.rule_layer.param_head(attr0)[:,0] # (N_obj,K)
-                    # colors = param_logits.softmax(-1).argmax(-1).cpu().tolist()
-                    # print("Predicted colors per object:", colors)
-                    sel = model.rule_layer.selector(attr_tensors[idx]).softmax(-1).argmax(-1)
-                    raw = model.rule_layer.param_head(attr_tensors[idx])      # (Ni,K,P)
-                    colors = raw[torch.arange(len(sel)), sel, 0]               # 取被选 op 的 color
-                    print(" ！ ！ ！ ！ Predicted colors per object:", colors.tolist())
+                    param_logits = model.rule_layer.param_head(attr0)
+                    param_logits = param_logits.view(attr0.shape[0], model.rule_layer.K, model.rule_layer.n_params)
+                    # 获取选中操作的颜色参数
+                    sel_indices = sel_probs.argmax(dim=-1)
+                    colors = param_logits[torch.arange(len(sel_indices)), sel_indices, 0]
+                    colors = colors.softmax(-1).argmax(-1).cpu().tolist()
+                    print("Predicted colors per object:", colors)
 
 
         if USE_RULE_LAYER:
