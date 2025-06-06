@@ -15,7 +15,8 @@ popper/popper_files/
 diffstar/.vscode/
 diffstar/tmp/
 
-
+plots
+0a2355a6
 
 # C extensions
 *.so
