@@ -8,7 +8,10 @@ import layers
 np.random.seed(0)
 torch.manual_seed(0)
 torch.set_default_dtype(torch.float32)
-torch.set_default_device('cuda')
+# Use GPU if available, otherwise fall back to CPU. The original code assumed
+# CUDA is always present which breaks in environments without a GPU.
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.set_default_device(device)
 
 
 class ARCCompressor:

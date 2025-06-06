@@ -43,8 +43,12 @@ def solve_task(task_name, split, time_limit, n_train_iterations, gpu_id, memory_
 
     try:  # Error catching block that puts errors on the error_queue
 
-        torch.set_default_device('cuda')
-        torch.cuda.set_device(gpu_id)
+        # Set the default device based on availability. When running on CPU only
+        # this avoids an initialization error.
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        torch.set_default_device(device)
+        if device == 'cuda':
+            torch.cuda.set_device(gpu_id)
         torch.cuda.reset_peak_memory_stats()  # Measure the memory used.
 
         # Get the task

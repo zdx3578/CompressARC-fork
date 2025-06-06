@@ -61,7 +61,9 @@ the task code, and it will:
 np.random.seed(0)
 torch.manual_seed(0)
 torch.set_default_dtype(torch.float32)
-torch.set_default_device('cuda')
+# Detect GPU availability at runtime.
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.set_default_device(device)
 
 if __name__ == "__main__":
 
