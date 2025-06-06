@@ -55,7 +55,7 @@ class SparseRuleLayer(nn.Module):
             H, W     = mask_i.shape
             if op_name == "recolor_mask":
                 color_id = p_i.softmax(dim=0).argmax().item()
-                print(f"[DBG Rule] obj={i} op=recolor_mask color={color_id}")
+                print(f"\n[DBG Rule] obj={i} op=recolor_mask color={color_id}")
             if canvas.dim() == 1 or canvas.numel() < mask_i.numel():
                 print(f"[DEBUG] before {op_name}: canvas.shape={canvas.shape}, "
                     f"mask.shape={mask_i.shape}, obj_id={i}")

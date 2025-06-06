@@ -142,3 +142,14 @@ def _flood_fill_holes(mask: np.ndarray) -> int:
                 holes += 1
     print(f"[DEBUG] Found {holes} holes in mask of shape {mask.shape}")
     return holes
+
+
+def assert_holes_consistency(obj_dicts, masks):
+    """Recompute holes from ``masks`` and assert they match ``obj_dicts``."""
+    for i, mask in enumerate(masks):
+        recomputed = _flood_fill_holes(mask.cpu().numpy())
+        print(f"obj {i}: color={obj_dicts[i]['color']} holes={recomputed}")
+        assert recomputed == obj_dicts[i]["holes"], (
+            f"Hole count mismatch for object {i}: "
+            f"expected {obj_dicts[i]['holes']}, got {recomputed}"
+        )

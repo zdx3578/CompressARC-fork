@@ -734,9 +734,9 @@ if __name__ == "__main__":
                 # pass
                 save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
 
-            if (train_step+1) % debugstep == 0:
-                visualization.plot_solution(train_history_logger,
-                    fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.png')
+            # if (train_step+1) % debugstep == 0:
+            #     visualization.plot_solution(train_history_logger,
+            #         fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.png')
                 # visualization.plot_solution(train_history_logger,
                 #     fname=folder + task_name + '_at_' + str(train_step+1) + ' steps.pdf')
 
