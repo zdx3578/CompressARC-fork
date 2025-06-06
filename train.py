@@ -287,7 +287,9 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
         start = attr_registry.key_index("holes")
         dim   = 9                             # 若改成 5，改这里
         holes_vec = task.output_attr_tensor[idx_sample][:, start:start+dim]
+        hole_counts = holes_vec.argmax(dim=1).tolist()
         print("[CHK] holes row0-4 =", holes_vec[:5].tolist())
+        print(f"[DBG {train_step}] hole count per obj:", hole_counts[:5])
 
         # -- ② selector argmax ---------------------------
         sel_logits = model.rule_layer.selector(task.output_attr_tensor[idx_sample])
@@ -311,6 +313,8 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
         # print("Predicted colors per obj:", color_ids[:5])
         print(f"[DBG {train_step}] selector idx per obj:", sel.tolist())
         print(f"[DBG {train_step}] color id per obj  :", color_ids[:5])
+        mapping = list(zip(hole_counts, color_ids))
+        print(f"[DBG {train_step}] hole->color mapping (first 5):", mapping[:5])
 
 
 
