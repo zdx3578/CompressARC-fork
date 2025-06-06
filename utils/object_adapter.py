@@ -28,6 +28,23 @@ def _obj_to_mask(obj, h=30, w=30):
         mask[r, c] = True
     return mask
 
+def dedup_masks(obj_dicts, masks, iou_thr=0.9):
+    """Remove highly-overlapping masks using IoU-NMS."""
+    keep = []
+    for i, m in enumerate(masks):
+        ok = True
+        for j in keep:
+            inter = np.logical_and(m, masks[j]).sum()
+            union = np.logical_or(m, masks[j]).sum()
+            if union > 0 and inter / float(union) > iou_thr:
+                ok = False
+                break
+        if ok:
+            keep.append(i)
+    obj_dicts = [obj_dicts[i] for i in keep]
+    masks = [masks[i] for i in keep]
+    return obj_dicts, masks, keep
+
 def extract_objects_from_grid(grid,
                               pair_id: int = 0,
                               in_or_out: str = "in",
@@ -53,7 +70,7 @@ def extract_objects_from_grid(grid,
         background_color=background_color,
     )
 
-    obj_dicts, mask_list, colors, sizes , holes = [],  [], [], [], []
+    obj_dicts, mask_list, colors, sizes , holes = [], [], [], [], []
     for idx, obj in enumerate(obj_set):
         mask = _obj_to_mask(obj, canvas_size, canvas_size)
         bbox_r = [r for _, (r, _) in obj]
@@ -78,6 +95,16 @@ def extract_objects_from_grid(grid,
         # attrs["holes"] = torch.tensor([*attrs.get("holes", []), hole_cnt], dtype=torch.long)
 
 
+
+    obj_dicts, mask_list, keep_idx = dedup_masks(obj_dicts, mask_list)
+    colors = [colors[i] for i in keep_idx]
+    sizes  = [sizes[i] for i in keep_idx]
+    holes  = [holes[i] for i in keep_idx]
+
+    for i in range(len(mask_list)):
+        for j in range(i+1, len(mask_list)):
+            if np.logical_and(mask_list[i], mask_list[j]).any():
+                raise AssertionError("Found overlapping masks after dedup")
 
     masks = (torch.from_numpy(np.stack(mask_list, 0))
              if mask_list else torch.zeros((0, canvas_size, canvas_size), dtype=torch.bool)).to(torch.get_default_device())
