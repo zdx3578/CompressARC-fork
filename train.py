@@ -28,6 +28,72 @@ reconstrucstep = 300
 
 maxsteps = 4000
 
+class AdaptiveProgressBar:
+    """自适应更新频率的进度条类"""
+    def __init__(self, start_step, total_steps, desc="Training", **kwargs):
+        self.pbar = tqdm(range(start_step, total_steps), desc=desc,
+                        unit="step", ncols=100, leave=True,
+                        initial=start_step, total=total_steps, **kwargs)
+        self.current_step = start_step
+        self.total_steps = total_steps
+        self.last_postfix = {}
+
+    def update(self, n=1):
+        """更新进度条"""
+        self.current_step += n
+
+        # 根据步数决定是否更新显示
+        should_display = False
+
+        if self.current_step <= 10:
+            # 前10步：每步显示
+            should_display = True
+        elif self.current_step <= 100:
+            # 10-100步：每5步显示
+            should_display = (self.current_step % 5 == 0)
+        else:
+            # 100步后：每6步显示
+            should_display = (self.current_step % 6 == 0)
+
+        # 总是在最后一步显示
+        if self.current_step >= self.total_steps:
+            should_display = True
+
+        if should_display and self.last_postfix:
+            self.pbar.set_postfix(self.last_postfix)
+            self.pbar.refresh()
+
+        self.pbar.update(n)
+
+    def set_postfix(self, postfix_dict):
+        """设置后缀信息，但根据自适应策略决定是否立即显示"""
+        self.last_postfix = postfix_dict
+
+        # 根据当前步数决定是否立即更新显示
+        should_display = False
+
+        if self.current_step <= 10:
+            # 前10步：每步显示
+            should_display = True
+        elif self.current_step <= 100:
+            # 10-100步：每5步显示
+            should_display = (self.current_step % 5 == 0)
+        else:
+            # 100步后：每6步显示
+            should_display = (self.current_step % 6 == 0)
+
+        if should_display:
+            self.pbar.set_postfix(postfix_dict)
+            self.pbar.refresh()
+
+    def __iter__(self):
+        """使进度条可迭代"""
+        return iter(self.pbar)
+
+    def close(self):
+        """关闭进度条"""
+        self.pbar.close()
+
 def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_name, rule_layer=None, USE_RULE_LAYER=False):
     """
     调试输出训练样例上的预测效果
@@ -485,10 +551,10 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     # model.rule_layer.hard = hard
 
 
-    if train_step < 200:                     # 1.像素复现
+    if train_step < 300:                     # 1.像素复现
         gamma, beta, lam = 40, 1, 0
         model.rule_layer.temp, model.rule_layer.hard = 2.0, False
-    elif train_step < 500:                   # 2.KL 抬头
+    elif train_step < 800:                   # 2.KL 抬头
         frac = (train_step-200)/300
         gamma = 40
         beta  = 1 + 3*frac          # →4
@@ -605,16 +671,26 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
 
     # Performance recording
-    train_history_logger.log(train_step,
-                             logits,
-                             x_mask,
-                             y_mask,
-                             KL_amounts,
-                             KL_names,
-                             total_KL,
-                             reconstruction_error,
-                            #  sparsity_penalty,
-                             loss)
+    train_history_logger.log(
+        train_step,
+        logits,
+        x_mask,
+        y_mask,
+        KL_amounts,
+        KL_names,
+        total_KL,
+        reconstruction_error,
+        #  sparsity_penalty,
+        loss,
+    )
+
+    # Return metrics for progress bar
+    return (
+        reconstruction_error.item(),
+        total_KL.item(),
+        float(sparsity_penalty),
+        loss.item(),
+    )
 
 
 
@@ -709,25 +785,29 @@ if __name__ == "__main__":
 
         print(f"\nTraining task {i+1}/{len(tasks)}: {task_name} (from step {start_step})")
 
-        # 创建tqdm进度条
-        pbar = tqdm(range(start_step, n_iterations), desc=f"Training {task_name}",
-                   unit="step", ncols=100, leave=True, initial=start_step, total=n_iterations)
+        # 创建自适应进度条
+        pbar = AdaptiveProgressBar(start_step, n_iterations, desc=f"Training {task_name}")
 
         for train_step in pbar:
-            take_step(task, model, optimizer, train_step, train_history_logger,folder, task_name)
+            recon, kl, sparse, loss = take_step(
+                task,
+                model,
+                optimizer,
+                train_step,
+                train_history_logger,
+                folder,
+                task_name,
+            )
 
-            # 更新进度条显示信息
-            if train_step % 10 == 0:  # 每10步更新一次显示
-                # 获取最新的损失信息
-                last_loss = getattr(train_history_logger, 'losses', [0])[-1] if hasattr(train_history_logger, 'losses') and train_history_logger.losses else 0
-                pbar.set_postfix({
-                    "step": train_step,
-                    # "loss": f"{loss.item():.4g}",
-                    # "Recon": f"{reconstruction_error.item():.3g}",
-                    # "KL": f"{total_KL.item():.3g}",
-                    # "Sparse": f"{sparsity_penalty.item():.2g}",
-                    # "lam": f"{lam:.2e}"
-                })
+            # 更新进度条显示信息（自适应频率控制）
+            pbar.set_postfix(
+                {
+                    "Recon": f"{recon:.3g}",
+                    "KL": f"{kl:.3g}",
+                    "Sparse": f"{sparse:.2g}",
+                    "loss": f"{loss:.4g}",
+                }
+            )
 
             # 在指定步数保存检查点
             if (train_step + 1) in args.save_steps:

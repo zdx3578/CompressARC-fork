@@ -37,7 +37,7 @@ class SparseRuleLayer(nn.Module):
         sel_logits = self.selector(attr_tensor) / 0.3 #self.temp      # (N,K)
         sel_prob   = F.gumbel_softmax(sel_logits, tau=self.temp, hard=True)  # (N,K)
 
-        params_raw = 1.5 * self.param_head(attr_tensor)                # (N,K*P)
+        params_raw = 2.5 * self.param_head(attr_tensor)                # (N,K*P)
         # params_raw
         params_raw = params_raw.view(N, self.K, self.n_params)
 
@@ -55,7 +55,7 @@ class SparseRuleLayer(nn.Module):
             H, W     = mask_i.shape
             if op_name == "recolor_mask":
                 color_id = p_i.softmax(dim=0).argmax().item()
-                print(f"\n[DBG Rule] obj={i} op=recolor_mask color={color_id}")
+                print(f"[DBG Rule] obj={i} op=recolor_mask color={color_id}")
             if canvas.dim() == 1 or canvas.numel() < mask_i.numel():
                 print(f"[DEBUG] before {op_name}: canvas.shape={canvas.shape}, "
                     f"mask.shape={mask_i.shape}, obj_id={i}")
