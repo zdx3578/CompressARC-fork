@@ -556,8 +556,8 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
         model.rule_layer.temp, model.rule_layer.hard = 2.0, False
     elif train_step < 500:                   # 2.KL 抬头
         frac = (train_step-200)/300
-        gamma = 30
-        beta  = 0 + 2*frac          # →4
+        gamma = 10
+        beta  = 3 + 2*frac          # →4
         lam   = 0
         model.rule_layer.temp, model.rule_layer.hard = 1.5, False
     else:                                    # 3.Rule 稀疏期
@@ -567,7 +567,7 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
 
     loss = gamma*reconstruction_error + beta*total_KL + lam*sparsity_penalty
-    loss += 0.01 * model.rule_layer.last_entropy
+    # loss += 0.01 * model.rule_layer.last_entropy
 
 
 

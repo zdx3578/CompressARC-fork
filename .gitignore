@@ -14,6 +14,10 @@ popper/popper_files/
 
 diffstar/.vscode/
 diffstar/tmp/
+accuracy_curve.pdf
+predictions.npz
+
+timing_result.txt
 
 plots
 0a2355a6
