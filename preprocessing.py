@@ -134,7 +134,9 @@ class Task:
                     original_grid = example.get(
                         mode, np.zeros(self.shapes[new_idx][1])
                     )                               # 2-D list/ndarray (H,W)
-                    print(original_grid)
+                    # Debug: show grid if necessary. Commented out to reduce
+                    # verbosity during preprocessing.
+                    # print(original_grid)
                     if isinstance(original_grid, list):
                         original_grid = np.array(original_grid)
                     if original_grid.ndim != 2:
@@ -165,6 +167,14 @@ class Task:
                         self.input_attr_tensor.append(obj_attrs_tensor)
                     else:
                         self.output_attr_tensor.append(obj_attrs_tensor)
+
+                    # Debug: inspect hole features for the first few objects of
+                    # the first training example.
+                    if subsplit == 'train' and example_num == 0 and len(obj_d) > 0:
+                        from utils.attr_registry import key_index
+                        h_start = key_index('holes')
+                        h_vec = obj_attrs_tensor[:, h_start:h_start+9]
+                        print(f"[DEBUG] Example {new_idx} {mode} holes one-hot:", h_vec[:5].tolist())
 
 
 

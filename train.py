@@ -239,7 +239,10 @@ print("Current sys.path:")
 for p in sys.path:
     print(p)
 
-torch.set_default_device('cuda')
+# Use CPU when a GPU driver is not available. This prevents crashes on machines
+# without CUDA support.
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+torch.set_default_device(device)
 
 """
 This file trains a model for every ARC-AGI task in a split.
@@ -622,11 +625,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     start_time = time.time()
-    torch.set_default_device('cuda')
+    # Default to GPU when available; otherwise use CPU so training still runs.
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    torch.set_default_device(device)
     task_nums = list(range(1000))
     split = "training"  # "training", "evaluation, or "test"
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(device)
     # device = "cpu"
 
     # Preprocess all tasks, make models, optimizers, and loggers. Make plots.
