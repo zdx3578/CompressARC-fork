@@ -144,12 +144,13 @@ class Task:
                     if original_grid.shape[0] == 0 or original_grid.shape[1] == 0:
                         raise ValueError(f"Grid shape {original_grid.shape} is invalid, must be non-empty.")
 
-                    from utils.object_adapter import extract_objects_from_grid
+                    from utils.object_adapter import extract_objects_from_grid, assert_holes_consistency
                     obj_d, obj_m, obj_a = extract_objects_from_grid(
                         grid=np.array(original_grid),  # 必须二维
                         pair_id=new_idx,
                         in_or_out=mode
                     )
+                    assert_holes_consistency(obj_d, obj_m)
                     if mode == 'input':
                         self.input_obj_dicts.append(obj_d)
                         self.input_obj_masks.append(obj_m)
