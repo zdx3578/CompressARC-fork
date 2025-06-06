@@ -1,10 +1,12 @@
 # utils/object_adapter.py
 import numpy as np
 import torch
-try:
-    from objutil import all_pureobjects_from_grid  # external dependency
-except ImportError:  # Fallback to a simple local implementation
-    from .objutil_stub import all_pureobjects_from_grid
+from utils.objutil import all_pureobjects_from_grid
+# try:
+#     from utils.objutil import all_pureobjects_from_grid  # external dependency
+# except ImportError:  # Fallback to a simple local implementation
+#     # from utils.objutil_sub import all_pureobjects_from_grid
+#     raise ImportError("Please install the required dependencies for CompressARC.")
 
 # ── 全局可调整参数 ───────────────────────────────────────────────
 # param ＝ 3-bool 组合列表，跟你以前 main 流程里的保持一致即可
