@@ -12,8 +12,9 @@ class SparseRuleLayer(nn.Module):
         super().__init__()
         # self.K = K_ops
         self.attr_dim = attr_dim
-        self.temp = temp
+        self.temp = 0.3  #temp
         self.n_params = n_colors
+        self.selector_temp = 0.3
 
         self.K = min(K_ops, len(OP_BANK))
         self.op_names = list(OP_BANK.keys())[:self.K]
@@ -33,10 +34,11 @@ class SparseRuleLayer(nn.Module):
         obj_masks   : (N,H,W) bool
         """
         N = attr_tensor.size(0)
-        sel_logits = self.selector(attr_tensor) / self.temp      # (N,K)
+        sel_logits = self.selector(attr_tensor) / 0.3 #self.temp      # (N,K)
         sel_prob   = F.gumbel_softmax(sel_logits, tau=self.temp, hard=True)  # (N,K)
 
-        params_raw = self.param_head(attr_tensor)                # (N,K*P)
+        params_raw = 1.5 * self.param_head(attr_tensor)                # (N,K*P)
+        # params_raw
         params_raw = params_raw.view(N, self.K, self.n_params)
 
         # print('!!debug111')
@@ -68,7 +70,13 @@ class SparseRuleLayer(nn.Module):
                     canvas_2d.copy_(canvas.view(H, W))
                 canvas = canvas_2d                     # 保证后续正常
             # ---------- 运行算子 ----------
-            canvas_tmp = op_func(canvas.clone(), mask_i, p_i)
+            # canvas_tmp = op_func(canvas.clone(), mask_i, p_i)
+            # rulelayers/sparse_rule_layer.py  内 forward() 关键行
+            if mask_i.sum() == 0:        # 对象空洞/出界，直接跳过
+                continue
+            canvas_tmp = op_func(canvas.clone(), mask_i, p_i,   # ❌ 旧
+                                temp=self.temp, hard=self.hard)  # ✅ 新
+
 
             # 再保险：算子若返回奇形，也强制 view
             if canvas_tmp.shape != (H, W):

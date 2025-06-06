@@ -26,7 +26,7 @@ import sys
 debugstep = 40
 reconstrucstep = 300
 
-maxsteps = 2000
+maxsteps = 4000
 
 def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_name, rule_layer=None, USE_RULE_LAYER=False):
     """
@@ -83,11 +83,11 @@ def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_nam
         raw_acc = np.mean(target_flat == raw_flat)
         final_acc = np.mean(target_flat == final_flat)
 
-        print(f"Train Example {train_idx}:")
-        print(f"  Raw Network Accuracy: {raw_acc:.3f}")
-        print(f"  Final Accuracy: {final_acc:.3f}")
-        if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep:
-            print(f"  Rule Improvement: {final_acc - raw_acc:+.3f}")
+        # print(f"Train Example {train_idx}:")
+        # print(f"  Raw Network Accuracy: {raw_acc:.3f}")
+        # print(f"  Final Accuracy: {final_acc:.3f}")
+        # if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep:
+        #     print(f"  Rule Improvement: {final_acc - raw_acc:+.3f}")
 
     plt.tight_layout()
     debug_fname = folder + f'DEBUG_train_pred_{task_name}_step_{train_step+1}.png'
@@ -96,8 +96,8 @@ def debug_train_predictions(task, logits, pred_idx, train_step, folder, task_nam
     print(f"Debug visualization saved: {debug_fname}")
 
     # 如果使用规则层，输出规则分析
-    if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep:
-        debug_rule_analysis(task, rule_layer, train_step)
+    # if USE_RULE_LAYER and rule_layer is not None and train_step >= reconstrucstep:
+    #     debug_rule_analysis(task, rule_layer, train_step)
 
 def debug_rule_analysis(task, rule_layer, train_step):
     """
@@ -457,25 +457,42 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
     # loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
 
-    if train_step < 150:
-        gamma, beta, lam, temp, hard = 10, 1, 0.0, 2.0, False
-    elif train_step < 300:
-        frac = (train_step-150)/150
-        gamma = 10 - 5*frac
-        beta  = 1 + 1*frac
-        lam   = 1e-3 * frac
-        temp, hard = 2.0, False
-    elif train_step < 600:
-        frac = (train_step-300)/300
-        gamma = 5 - 3*frac
-        beta  = 2 + 2*frac
-        lam   = 1e-3 + 2e-3*frac
-        temp, hard = 1.0, True
-    else:
-        gamma, beta, lam, temp, hard = 2, 4, 3e-3, 1.0, True
+    # if train_step < 250:
+    #     gamma, beta, lam, temp, hard = 13, 1, 0.0, 2.0, False
+    # elif train_step < 600:
+    #     frac = (train_step-150)/850
+    #     gamma = 13 - 1*frac
+    #     beta  = 1 + 1*frac
+    #     lam   = 1e-3 * frac
+    #     temp, hard = 1.4, False
+    # elif train_step < 1000:
+    #     frac = (train_step-300)/1000
+    #     gamma = 13 - 3*frac
+    #     beta  = 2 + 2*frac
+    #     lam   = 1e-3 + 1e-3*frac
+    #     temp, hard = 1.0, True
+    # else:
+    #     gamma, beta, lam, temp, hard = 12, 4, 3e-3, 1.0, True
 
-    model.rule_layer.temp = temp
-    model.rule_layer.hard = hard
+    # model.rule_layer.temp = temp
+    # model.rule_layer.hard = hard
+
+
+    if train_step < 200:                     # 1.像素复现
+        gamma, beta, lam = 40, 1, 0
+        model.rule_layer.temp, model.rule_layer.hard = 2.0, False
+    elif train_step < 500:                   # 2.KL 抬头
+        frac = (train_step-200)/300
+        gamma = 40
+        beta  = 1 + 3*frac          # →4
+        lam   = 0
+        model.rule_layer.temp, model.rule_layer.hard = 1.5, False
+    else:                                    # 3.Rule 稀疏期
+        gamma, beta, lam = 40, 4, 3e-3
+        model.rule_layer.temp, model.rule_layer.hard = 1.0, True
+
+
+
     loss = gamma*reconstruction_error + beta*total_KL + lam*sparsity_penalty
 
 
@@ -484,13 +501,13 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     optimizer.step()
     optimizer.zero_grad()
 
-    # debug_train_predictions(
-    #     task, logits, pred_idx, train_step,
-    #     folder=task_name + '/',  # 需要传入folder参数
-    #     task_name=task_name,     # 需要传入task_name参数
-    #     rule_layer=rule_layer,
-    #     USE_RULE_LAYER=USE_RULE_LAYER
-    # )
+    debug_train_predictions(
+        task, logits, pred_idx, train_step,
+        folder=task_name + '/',  # 需要传入folder参数
+        task_name=task_name,     # 需要传入task_name参数
+        rule_layer=rule_layer,
+        USE_RULE_LAYER=USE_RULE_LAYER
+    )
 
     if (train_step+1) % debugstep == 0:
         print(f"\n=== Train Examples Debug at Step {train_step+1} ===")
@@ -589,6 +606,7 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
                              KL_names,
                              total_KL,
                              reconstruction_error,
+                            #  sparsity_penalty,
                              loss)
 
 
@@ -694,8 +712,12 @@ if __name__ == "__main__":
                 # 获取最新的损失信息
                 last_loss = getattr(train_history_logger, 'losses', [0])[-1] if hasattr(train_history_logger, 'losses') and train_history_logger.losses else 0
                 pbar.set_postfix({
-                    'step': train_step + 1,
-                    'loss': f"{last_loss:.4f}" if isinstance(last_loss, (int, float)) else "N/A"
+                    "step": train_step,
+                    # "loss": f"{loss.item():.4g}",
+                    # "Recon": f"{reconstruction_error.item():.3g}",
+                    # "KL": f"{total_KL.item():.3g}",
+                    # "Sparse": f"{sparsity_penalty.item():.2g}",
+                    # "lam": f"{lam:.2e}"
                 })
 
             # 在指定步数保存检查点

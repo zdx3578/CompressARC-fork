@@ -5,11 +5,15 @@ from objutil import all_pureobjects_from_grid                # 直接复用你�
 
 # ── 全局可调整参数 ───────────────────────────────────────────────
 # param ＝ 3-bool 组合列表，跟你以前 main 流程里的保持一致即可
-DEFAULT_PARAM_COMBINATIONS = [
+DEFAULT_PARAM_COMBINATIONS00 = [
     (False, False, False),
     (True,  False, False),
     (False, True,  False),
     (False, False, True),
+]
+
+DEFAULT_PARAM_COMBINATIONS = [
+    (True,  False, False),
 ]
 
 def _obj_to_mask(obj, h=30, w=30):
@@ -104,4 +108,5 @@ def _flood_fill_holes(mask: np.ndarray) -> int:
                 stack.extend([(i-1,j),(i+1,j),(i,j-1),(i,j+1)])
             if not touches_border:
                 holes += 1
+    print(f"[DEBUG] Found {holes} holes in mask of shape {mask.shape}")
     return holes

@@ -41,7 +41,7 @@ def op_recolor_mask(canvas, mask, params, temp=1, hard=True):
 
 # ─── 示例算子 ──────────────────────────────────
 @register("fill_line")
-def op_fill_line(canvas, mask, params):
+def op_fill_line(canvas, mask, params, temp=1, hard=True):
     """
     params[0]: color 0-9  (softmax 外部完成)
     params[1]: axis 0=rows 1=cols (Gumbel-St)
@@ -58,7 +58,7 @@ def op_fill_line(canvas, mask, params):
     return canvas
 
 @register("draw_cross")
-def op_draw_cross(canvas, mask, params):
+def op_draw_cross(canvas, mask, params, temp=1, hard=True):
     """
     params[0]: color id 0‥9   （softmax、argmax 外部完成）
     params[1]: width 0‥4
@@ -87,28 +87,28 @@ def op_draw_cross(canvas, mask, params):
 
 
 @register("noop")
-def op_noop(canvas, mask, params):
+def op_noop(canvas, mask, params, temp=1, hard=True):
     """什么也不做，占位算子"""
     return canvas
 
 
 @register("noop1")
-def op_noop1(canvas, mask, params):
+def op_noop1(canvas, mask, params, temp=1, hard=True):
     """什么也不做，占位算子"""
     return canvas
 
 @register("noop2")
-def op_noop2(canvas, mask, params):
+def op_noop2(canvas, mask, params, temp=1, hard=True):
     """什么也不做，占位算子"""
     return canvas
 
 @register("noop3")
-def op_noop3(canvas, mask, params):
+def op_noop3(canvas, mask, params, temp=1, hard=True):
     """什么也不做，占位算子"""
     return canvas
 
 @register("noop4")
-def op_noop4(canvas, mask, params):
+def op_noop4(canvas, mask, params, temp=1, hard=True):
     """什么也不做，占位算子"""
     return canvas
 
