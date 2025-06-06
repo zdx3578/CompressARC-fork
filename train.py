@@ -551,17 +551,17 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     # model.rule_layer.hard = hard
 
 
-    if train_step < 300:                     # 1.像素复现
-        gamma, beta, lam = 40, 1, 0
+    if train_step < 200:                     # 1.像素复现
+        gamma, beta, lam = 40, 0, 0
         model.rule_layer.temp, model.rule_layer.hard = 2.0, False
-    elif train_step < 800:                   # 2.KL 抬头
+    elif train_step < 500:                   # 2.KL 抬头
         frac = (train_step-200)/300
-        gamma = 40
-        beta  = 1 + 3*frac          # →4
+        gamma = 30
+        beta  = 0 + 2*frac          # →4
         lam   = 0
         model.rule_layer.temp, model.rule_layer.hard = 1.5, False
     else:                                    # 3.Rule 稀疏期
-        gamma, beta, lam = 40, 4, 3e-3
+        gamma, beta, lam = 30, 3, 3e-3
         model.rule_layer.temp, model.rule_layer.hard = 1.0, True
 
 

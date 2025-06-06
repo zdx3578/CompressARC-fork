@@ -21,6 +21,10 @@ class SparseRuleLayer(nn.Module):
         self.selector = nn.Linear(attr_dim, self.K)
         self.param_head = nn.Linear(attr_dim, self.K * self.n_params)
 
+        # 用于控制recolor_mask打印输出
+        self.debug_buffer = []
+        self.max_debug_per_line = 5
+
 
         # self.selector = nn.Linear(attr_dim, K_ops)       # 选算子
         # self.param_head = nn.Linear(attr_dim, K_ops*4)   # 每算子最多 4 个参数
@@ -33,11 +37,14 @@ class SparseRuleLayer(nn.Module):
         attr_tensor : (N,D) float
         obj_masks   : (N,H,W) bool
         """
+        # 重置debug buffer
+        self.debug_buffer = []
+
         N = attr_tensor.size(0)
         sel_logits = self.selector(attr_tensor) / 0.3 #self.temp      # (N,K)
         sel_prob   = F.gumbel_softmax(sel_logits, tau=self.temp, hard=True)  # (N,K)
 
-        params_raw = 2.5 * self.param_head(attr_tensor)                # (N,K*P)
+        params_raw = 5 * self.param_head(attr_tensor)                # (N,K*P)
         # params_raw
         params_raw = params_raw.view(N, self.K, self.n_params)
 
@@ -55,7 +62,13 @@ class SparseRuleLayer(nn.Module):
             H, W     = mask_i.shape
             if op_name == "recolor_mask":
                 color_id = p_i.softmax(dim=0).argmax().item()
-                print(f"[DBG Rule] obj={i} op=recolor_mask color={color_id}")
+                debug_msg = f"obj={i} op=recolor_mask color={color_id}"
+                self.debug_buffer.append(debug_msg)
+
+                # 当缓冲区满了或者是最后一个对象时，打印并清空
+                if len(self.debug_buffer) >= self.max_debug_per_line or i == N - 1:
+                    print(f"[DBG Rule] {' | '.join(self.debug_buffer)}")
+                    self.debug_buffer = []
             if canvas.dim() == 1 or canvas.numel() < mask_i.numel():
                 print(f"[DEBUG] before {op_name}: canvas.shape={canvas.shape}, "
                     f"mask.shape={mask_i.shape}, obj_id={i}")
@@ -95,5 +108,10 @@ class SparseRuleLayer(nn.Module):
 
             # 确保颜色值在有效范围内 (0-9)
             canvas = torch.clamp(canvas, 0, 9)
+
+        # 如果还有未打印的debug信息，在这里打印
+        if self.debug_buffer:
+            print(f"[DBG Rule] {' | '.join(self.debug_buffer)}")
+            self.debug_buffer = []
 
         return canvas
