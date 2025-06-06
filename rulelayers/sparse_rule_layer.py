@@ -24,6 +24,7 @@ class SparseRuleLayer(nn.Module):
         # 用于控制recolor_mask打印输出
         self.debug_buffer = []
         self.max_debug_per_line = 5
+        self.last_entropy  = 0
 
 
         # self.selector = nn.Linear(attr_dim, K_ops)       # 选算子
@@ -47,6 +48,10 @@ class SparseRuleLayer(nn.Module):
         params_raw = 5 * self.param_head(attr_tensor)                # (N,K*P)
         # params_raw
         params_raw = params_raw.view(N, self.K, self.n_params)
+
+        sel_probs_full = sel_logits.softmax(dim=-1)       # (N_obj, K)
+        entropy = -(sel_probs_full * sel_probs_full.log()).sum(dim=-1).mean()
+        self.last_entropy = entropy
 
         # print('!!debug111')
         # print(canvas)

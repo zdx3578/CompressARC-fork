@@ -567,6 +567,7 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
 
 
     loss = gamma*reconstruction_error + beta*total_KL + lam*sparsity_penalty
+    loss += 0.01 * model.rule_layer.last_entropy
 
 
 
@@ -668,6 +669,43 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
         visualization.plot_solution(
             train_history_logger,
             fname = folder + f"{task_name}_at_{train_step+1}_steps.png")
+
+    # with torch.no_grad():
+    #     # ① 先从 attr_registry.REGISTRY 拿到 "holes" 对应的索引位置
+    #     #    list(attr_registry.REGISTRY.keys()) 会返回所有已注册属性的名称列表
+    #     holes_key_list = list(attr_registry.REGISTRY.keys())
+    #     if 'holes' not in holes_key_list:
+    #         raise KeyError("attr_registry.REGISTRY 中找不到 'holes' 这个键，请确认已在 attr_registry.py 中注册。")
+    #     holes_idx = holes_key_list.index('holes')
+
+    #     # ② 提取第 0 个 train 样例的所有对象 holes 属性（one-hot 向量再 argmax 得到真实孔数）
+    #     holes_onehot = task.output_attr_tensor[0][:, holes_idx *  # 每个属性 plugin 返回的维度长度
+    #                                             (len(holes_key_list) and
+    #                                                 (torch.tensor(attr_registry.REGISTRY['holes']( {'holes':0} )).shape[0])) :
+    #                                             holes_idx *
+    #                                             (torch.tensor(attr_registry.REGISTRY['holes']({'holes':0})).shape[0]) +
+    #                                             (torch.tensor(attr_registry.REGISTRY['holes']({'holes':0})).shape[0])]
+    #     # 上面分片的思路：假设 attr_registry 中每个 plugin 返回的维度并不相同时，
+    #     #   holes_idx * plugin_dim + plugin_dim   就是该插件在输出向量中的区间范围。
+    #     # 但为了简化，这里我们一般假设 attr_registry 中各属性 plugin 返回的长度一致，
+    #     #   比如 attr_holes 返回长度 9，那 holes_idx*9:(holes_idx*9+9) 即可。
+    #     # 最终我们做 argmax 得到每个对象的 ”holes count“：
+    #     holes = holes_onehot.argmax(dim=-1)  # (N_obj,)
+    #     # ② selector 直接取 argmax，得到每个对象选哪个算子
+    #     sel = model.rule_layer.selector(task.output_attr_tensor[0]).argmax(dim=-1)  # (N_obj,)
+    #     # ③ param_head 计算 raw_param，然后 reshape 成 (N_obj, K, 10) 并 softmax→argmax 得到颜色
+    #     N_obj, _ = task.output_attr_tensor[0].shape
+    #     raw_param = model.rule_layer.param_head(task.output_attr_tensor[0])  # (N_obj, K*10)
+    #     color_logits = raw_param.view(N_obj, model.rule_layer.K, 10)        # (N_obj, K, 10)
+    #     color_ids = color_logits[torch.arange(N_obj), sel, :].softmax(dim=-1).argmax(dim=-1)  # (N_obj,)
+    #     # 注意：这里假设每个 op 的参数向量长度是 10。如果你实际修改了 n_params，请相应调整。
+    #     N_obj, _ = task.output_attr_tensor[0].shape
+    #     raw_param = model.rule_layer.param_head(task.output_attr_tensor[0])    # (N_obj, K * P)
+    #     P = 10  # 单个 op 的参数长度。如果你改成了其他长度，请同步修改
+    #     color_logits = raw_param.view(N_obj, model.rule_layer.K, P)           # (N_obj, K, P)
+    #     color_ids = color_logits[torch.arange(N_obj), sel, :].softmax(dim=-1).argmax(dim=-1)  # (N_obj,)
+
+
 
 
     # Performance recording
@@ -805,6 +843,7 @@ if __name__ == "__main__":
                     "Recon": f"{recon:.3g}",
                     "KL": f"{kl:.3g}",
                     "Sparse": f"{sparse:.2g}",
+                    "Ent":   f"{model.rule_layer.last_entropy:.2f}",
                     "loss": f"{loss:.4g}",
                 }
             )
@@ -862,3 +901,5 @@ if __name__ == "__main__":
     # Write down how long it all took
     with open('timing_result.txt', 'w') as f:
         f.write("Time elapsed in seconds: " + str(time.time() - start_time))
+
+
