@@ -20,7 +20,7 @@ class ARCCompressor:
     """
 
     # Define the channel dimensions that all the layers use
-    n_layers = 4
+    n_layers = 5
     share_up_dim = 16
     share_down_dim = 8
     decoding_dim = 4

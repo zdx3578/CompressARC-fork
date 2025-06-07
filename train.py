@@ -26,7 +26,9 @@ import sys
 debugstep = 40
 reconstrucstep = 300
 
-maxsteps = 4000
+maxsteps = 3000
+
+learningrate = 1e-2
 
 class AdaptiveProgressBar:
     """自适应更新频率的进度条类"""
@@ -551,17 +553,17 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
     # model.rule_layer.hard = hard
 
 
-    if train_step < 200:                     # 1.像素复现
+    if train_step < 1200:                     # 1.像素复现
         gamma, beta, lam = 40, 0, 0
         model.rule_layer.temp, model.rule_layer.hard = 2.0, False
-    elif train_step < 500:                   # 2.KL 抬头
+    elif train_step < 1500:                   # 2.KL 抬头
         frac = (train_step-200)/300
-        gamma = 10
-        beta  = 3 + 2*frac          # →4
-        lam   = 0
+        gamma = 40
+        beta  = 2 + 2*frac          # →4
+        lam   = 1e-4
         model.rule_layer.temp, model.rule_layer.hard = 1.5, False
     else:                                    # 3.Rule 稀疏期
-        gamma, beta, lam = 30, 3, 3e-3
+        gamma, beta, lam = 20, 4, 5e-3
         model.rule_layer.temp, model.rule_layer.hard = 1.0, True
 
 
@@ -778,13 +780,13 @@ if __name__ == "__main__":
             rule_layer = SparseRuleLayer(attr_dim, n_colors=task.n_color_channels, K_ops=8, temp=1.0).to(device)
             optimizer  = torch.optim.Adam(
                 model.weights_list + list(rule_layer.parameters()),
-                lr=0.01
+                lr=learningrate
             )
         else:
             rule_layer = None
-            optimizer = torch.optim.Adam(model.weights_list, lr=0.01, betas=(0.5, 0.9))
+            optimizer = torch.optim.Adam(model.weights_list, lr=learningrate, betas=(0.5, 0.9))
 
-        # optimizer = torch.optim.Adam(model.weights_list, lr=0.01, betas=(0.5, 0.9))
+        # optimizer = torch.optim.Adam(model.weights_list, lr=learningrate, betas=(0.5, 0.9))
 
         model.rule_layer = rule_layer
         model.use_rule   = USE_RULE_LAYER
