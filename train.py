@@ -517,22 +517,34 @@ def take_step(task, model, optimizer, scheduler, train_step, train_history_logge
 
     #  4) 重新计算 reconstruction loss
 
+    step1 = 100
+    step2 = 850
 
-
-    if train_step < 200:                     # 1.像素复现
+    if train_step < step1:                     # 1.像素复现
         gamma, beta, lam = 40, 4, 0
         model.rule_layer.temp, model.rule_layer.hard = 2.0, False
-    elif train_step < 850 # step2:                   # 2.KL 抬头
-        frac = (train_step-200)/650
+    elif train_step < step2:                   # 2.KL 抬头
+        frac = (train_step - step1)/(step2)
         gamma = 40
-        beta  = 4 + 1*frac          # →4
-        lam   = 1e-3 * frac  # →1e-3
+        beta  = 4 + 8*frac          # →4
+        lam   = 1e-1 * frac  # →1e-3
         model.rule_layer.temp, model.rule_layer.hard = 1.5, False
     else:                                    # 3.Rule 稀疏期
-        gamma, beta, lam = 30, 5, 3e-3
+        gamma, beta, lam = 30, 5, 5e-1
         model.rule_layer.temp, model.rule_layer.hard = 1.0, True
 
-    sparsity_penalty = lam * rule_layer.selector(task.output_attr_tensor[0]).abs().mean()
+    # sparsity_penalty = lam * rule_layer.selector(task.output_attr_tensor[0]).abs().mean()
+    # 用 Gumbel-Softmax 的 sel_probs 来算稀疏惩罚
+    sel_logits = rule_layer.selector(task.output_attr_tensor[0])    # (N_obj, K)
+    sel_probs = torch.nn.functional.gumbel_softmax(sel_logits,
+                                tau=model.rule_layer.temp,
+                                hard=model.rule_layer.hard)
+    # 方案 1：每个对象上只保留一个算子 → L1=1, 稀疏惩罚 = lam * 1
+    sparsity_penalty = lam * sel_probs.sum(dim=-1).mean()
+
+    # # 方案 2：整个 batch 尽量少用不同算子 → group L1
+    # group_usage = sel_probs.sum(dim=0)    # (K,)
+    # sparsity_penalty = lam * group_usage.abs().sum()
 
     loss = gamma*reconstruction_error + beta*total_KL + sparsity_penalty
     loss += 0.01 * model.rule_layer.last_entropy
@@ -812,7 +824,12 @@ if __name__ == "__main__":
         print(f"\nTraining task {i+1}/{len(tasks)}: {task_name} (from step {start_step})")
 
         # 创建自适应进度条
-        pbar = AdaptiveProgressBar(start_step, n_iterations, desc=f"Training {task_name}")
+        # pbar = AdaptiveProgressBar(start_step, n_iterations, desc=f"Training {task_name}")
+        pbar = tqdm(
+            range(start_step, n_iterations),
+            desc=f"Training {task_name}",
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]'
+)
 
         for train_step in pbar:
             recon, kl, sparse, loss = take_step(
@@ -826,6 +843,7 @@ if __name__ == "__main__":
                 task_name,
             )
 
+
             # 更新进度条显示信息（自适应频率控制）
             current_lr = optimizer.param_groups[0]['lr']
             pbar.set_postfix(
@@ -836,7 +854,8 @@ if __name__ == "__main__":
                     "Ent":   f"{model.rule_layer.last_entropy:.2f}",
                     "loss": f"{loss:.4g}",
                     "lr": f"{current_lr:.1e}",
-                }
+                },
+                refresh=True
             )
 
             # 在指定步数保存检查点
