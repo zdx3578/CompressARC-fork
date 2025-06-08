@@ -28,7 +28,7 @@ reconstrucstep = 300
 
 maxsteps = 3000
 
-learningrate = 1e-2
+learningrate = 1.1e-2
 
 class AdaptiveProgressBar:
     """自适应更新频率的进度条类"""
@@ -209,7 +209,7 @@ def debug_rule_analysis(task, rule_layer, train_step):
 
 
 # 权重保存和加载功能
-def save_checkpoint(model, optimizer, train_step, task_name, folder, rule_layer=None):
+def save_checkpoint(model, optimizer, scheduler, train_step, task_name, folder, rule_layer=None):
     """保存训练检查点"""
     checkpoint = {
         'train_step': train_step,
@@ -227,6 +227,9 @@ def save_checkpoint(model, optimizer, train_step, task_name, folder, rule_layer=
     if optimizer is not None:
         checkpoint['optimizer_state_dict'] = optimizer.state_dict()
 
+    if scheduler is not None:
+        checkpoint['scheduler_state_dict'] = scheduler.state_dict()
+
     # 如果有rule_layer，也要保存
     if rule_layer is not None:
         checkpoint['rule_layer_state_dict'] = rule_layer.state_dict()
@@ -236,7 +239,7 @@ def save_checkpoint(model, optimizer, train_step, task_name, folder, rule_layer=
     print(f"Checkpoint saved at step {train_step}: {checkpoint_path}")
     return checkpoint_path
 
-def load_checkpoint(checkpoint_path, model, optimizer, device, rule_layer=None):
+def load_checkpoint(checkpoint_path, model, optimizer, scheduler, device, rule_layer=None):
     """加载训练检查点"""
     if not os.path.exists(checkpoint_path):
         print(f"Checkpoint file not found: {checkpoint_path}")
@@ -259,6 +262,9 @@ def load_checkpoint(checkpoint_path, model, optimizer, device, rule_layer=None):
     # 加载优化器状态
     if optimizer is not None and 'optimizer_state_dict' in checkpoint:
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    if scheduler is not None and 'scheduler_state_dict' in checkpoint:
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
     # 如果有rule_layer，也要加载
     if rule_layer is not None and 'rule_layer_state_dict' in checkpoint:
@@ -336,13 +342,14 @@ def mask_select_logprobs(mask, length):
     log_partition = torch.logsumexp(logprobs, dim=0)
     return log_partition, logprobs
 
-def take_step(task, model, optimizer, train_step, train_history_logger, folder, task_name):
+def take_step(task, model, optimizer, scheduler, train_step, train_history_logger, folder, task_name):
     """
     Runs a forward pass of the model on the ARC-AGI task.
     Args:
         task (Task): The ARC-AGI task containing the problem.
         model (ArcCompressor): The VAE decoder model to run the forward pass with.
         optimizer (torch.optim.Optimizer): The optimizer used to take the step on the model weights.
+        scheduler (torch.optim.lr_scheduler._LRScheduler): Scheduler updating the learning rate.
         train_step (int): The training iteration number.
         train_history_logger (Logger): A logger object used for logging the forward pass outputs
                 of the model, as well as accuracy and other things.
@@ -497,84 +504,45 @@ def take_step(task, model, optimizer, train_step, train_history_logger, folder, 
                 coefficient = 1
             logprob = torch.logsumexp(coefficient*logprobs, dim=(0,1))/coefficient  # Aggregate for all possible grid sizes
             reconstruction_error = reconstruction_error - logprob
-
-    # ---------- sparsity penalty ----------
-    if USE_RULE_LAYER and rule_layer is not None:
-        # 以首样例的属性张量估算稀疏度
-        lam_sched = 0.0 if train_step < 150 else \
-                    3e-4 * min(1.0, (train_step-150)/450)
-        sparsity_penalty = lam_sched * rule_layer.selector(
-            task.output_attr_tensor[0]).abs().mean()
-    else:
-        sparsity_penalty = 0.0
+    # step2 = 850
+    # # ---------- sparsity penalty ----------
+    # if USE_RULE_LAYER and rule_layer is not None:
+    #     # 以首样例的属性张量估算稀疏度
+    #     lam_sched = 0.0 if train_step < step2 else \
+    #                 3e-4 * min(1.0, (train_step-150)/450)
+    #     sparsity_penalty = lam_sched * rule_layer.selector(
+    #         task.output_attr_tensor[0]).abs().mean()
+    # else:
+    #     sparsity_penalty = 0.0
 
     #  4) 重新计算 reconstruction loss
-    # ────────────────────────────────────────────────
-    # ground-truth 颜色索引
-
-    # ---------- reconstruction error on output frame ----------
-    # logits_out  = logits[..., 1]                     # (N,C,H,W)
-    # target_idx  = task.problem[:, :, :, 1].to(logits.device)  # (N,H,W)
-    # reconstruction_error = torch.nn.functional.cross_entropy(
-    #         logits_out, target_idx, reduction='sum')
 
 
-    # if train_step < reconstrucstep:         gamma, beta, lam = 15, 0.51, 0.0
-    # elif train_step < 800:       # linear anneal
-    #     frac  = (train_step)/1110
-    #     gamma = 10
-    #     beta  = 1  + 0.5*frac
-    #     lam   = (5e-4 ) * frac
-    # else:
-    #     gamma = 10
-    #     beta  = 2
-    #     lam   = 1e-3
 
-    # loss = gamma * reconstruction_error + beta * total_KL + lam * sparsity_penalty
-
-    # if train_step < 250:
-    #     gamma, beta, lam, temp, hard = 13, 1, 0.0, 2.0, False
-    # elif train_step < 600:
-    #     frac = (train_step-150)/850
-    #     gamma = 13 - 1*frac
-    #     beta  = 1 + 1*frac
-    #     lam   = 1e-3 * frac
-    #     temp, hard = 1.4, False
-    # elif train_step < 1000:
-    #     frac = (train_step-300)/1000
-    #     gamma = 13 - 3*frac
-    #     beta  = 2 + 2*frac
-    #     lam   = 1e-3 + 1e-3*frac
-    #     temp, hard = 1.0, True
-    # else:
-    #     gamma, beta, lam, temp, hard = 12, 4, 3e-3, 1.0, True
-
-    # model.rule_layer.temp = temp
-    # model.rule_layer.hard = hard
-
-
-    if train_step < 1200:                     # 1.像素复现
-        gamma, beta, lam = 40, 0, 0
+    if train_step < 200:                     # 1.像素复现
+        gamma, beta, lam = 40, 4, 0
         model.rule_layer.temp, model.rule_layer.hard = 2.0, False
-    elif train_step < 1500:                   # 2.KL 抬头
-        frac = (train_step-200)/300
+    elif train_step < 850 # step2:                   # 2.KL 抬头
+        frac = (train_step-200)/650
         gamma = 40
-        beta  = 2 + 2*frac          # →4
-        lam   = 1e-4
+        beta  = 4 + 1*frac          # →4
+        lam   = 1e-3 * frac  # →1e-3
         model.rule_layer.temp, model.rule_layer.hard = 1.5, False
     else:                                    # 3.Rule 稀疏期
-        gamma, beta, lam = 20, 4, 5e-3
+        gamma, beta, lam = 30, 5, 3e-3
         model.rule_layer.temp, model.rule_layer.hard = 1.0, True
 
+    sparsity_penalty = lam * rule_layer.selector(task.output_attr_tensor[0]).abs().mean()
 
-
-    loss = gamma*reconstruction_error + beta*total_KL + lam*sparsity_penalty
-    # loss += 0.01 * model.rule_layer.last_entropy
+    loss = gamma*reconstruction_error + beta*total_KL + sparsity_penalty
+    loss += 0.01 * model.rule_layer.last_entropy
 
 
 
     loss.backward()
     optimizer.step()
+    if scheduler is not None:
+        scheduler.step(reconstruction_error.item())
     optimizer.zero_grad()
 
     debug_train_predictions(
@@ -768,6 +736,7 @@ if __name__ == "__main__":
 
     models = []
     optimizers = []
+    schedulers = []
     train_history_loggers = []
     for task in tasks:
         model = arc_compressor.ARCCompressor(task)
@@ -782,9 +751,25 @@ if __name__ == "__main__":
                 model.weights_list + list(rule_layer.parameters()),
                 lr=learningrate
             )
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode='min',
+                factor=0.99,
+                patience=20,
+                min_lr=1e-3,
+                # verbose=True
+            )
         else:
             rule_layer = None
             optimizer = torch.optim.Adam(model.weights_list, lr=learningrate, betas=(0.5, 0.9))
+            scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer,
+                mode='min',
+                factor=0.99,
+                patience=20,
+                min_lr=1e-3,
+                # verbose=True
+            )
 
         # optimizer = torch.optim.Adam(model.weights_list, lr=learningrate, betas=(0.5, 0.9))
 
@@ -792,6 +777,7 @@ if __name__ == "__main__":
         model.use_rule   = USE_RULE_LAYER
 
         optimizers.append(optimizer)
+        schedulers.append(scheduler)
         train_history_logger = solution_selection.Logger(task)
         visualization.plot_problem(train_history_logger)
         train_history_loggers.append(train_history_logger)
@@ -806,7 +792,7 @@ if __name__ == "__main__":
     folder = task_name + '/'
 
     # Train the models one by one
-    for i, (task, model, optimizer, train_history_logger) in enumerate(zip(tasks, models, optimizers, train_history_loggers)):
+    for i, (task, model, optimizer, scheduler, train_history_logger) in enumerate(zip(tasks, models, optimizers, schedulers, train_history_loggers)):
         n_iterations = maxsteps
         start_step = 0
 
@@ -818,7 +804,7 @@ if __name__ == "__main__":
                 checkpoint_path = find_latest_checkpoint(folder, task_name)
 
             if checkpoint_path:
-                start_step = load_checkpoint(checkpoint_path, model, optimizer, device)
+                start_step = load_checkpoint(checkpoint_path, model, optimizer, scheduler, device)
                 print(f"Resuming training from step {start_step}")
             else:
                 print("No checkpoint found, starting from beginning")
@@ -833,6 +819,7 @@ if __name__ == "__main__":
                 task,
                 model,
                 optimizer,
+                scheduler,
                 train_step,
                 train_history_logger,
                 folder,
@@ -840,6 +827,7 @@ if __name__ == "__main__":
             )
 
             # 更新进度条显示信息（自适应频率控制）
+            current_lr = optimizer.param_groups[0]['lr']
             pbar.set_postfix(
                 {
                     "Recon": f"{recon:.3g}",
@@ -847,13 +835,14 @@ if __name__ == "__main__":
                     "Sparse": f"{sparse:.2g}",
                     "Ent":   f"{model.rule_layer.last_entropy:.2f}",
                     "loss": f"{loss:.4g}",
+                    "lr": f"{current_lr:.1e}",
                 }
             )
 
             # 在指定步数保存检查点
             if (train_step + 1) in args.save_steps:
                 # pass
-                save_checkpoint(model, optimizer, train_step + 1, task_name, folder)
+                save_checkpoint(model, optimizer, scheduler, train_step + 1, task_name, folder)
 
             # if (train_step+1) % debugstep == 0:
             #     visualization.plot_solution(train_history_logger,
@@ -904,4 +893,41 @@ if __name__ == "__main__":
     with open('timing_result.txt', 'w') as f:
         f.write("Time elapsed in seconds: " + str(time.time() - start_time))
 
+
+
+
+
+
+
+
+
+
+    # step2 = 500
+    # # ---------- sparsity penalty ----------
+    # if USE_RULE_LAYER and rule_layer is not None:
+    #     #! 以首样例的属性张量估算稀疏度
+    #     #!
+    #     #!
+    #     lam_sched = 0.0 if train_step < step2 else \
+    #                 3e-4 * min(1.0, (train_step-150)/450)
+    #     sparsity_penalty = lam_sched * rule_layer.selector(
+    #         task.output_attr_tensor[0]).abs().mean()
+    # else:
+    #     sparsity_penalty = 0.0
+
+
+
+
+    # if train_step < 1200:                     # 1.像素复现
+    #     gamma, beta, lam = 40, 0, 0
+    #     model.rule_layer.temp, model.rule_layer.hard = 2.0, False
+    # elif train_step < 1500:     #  step2              # 2.KL 抬头
+    #     frac = (train_step-200)/300
+    #     gamma = 40
+    #     beta  = 2 + 2*frac          # →4
+    #     lam   = 1e-4
+    #     model.rule_layer.temp, model.rule_layer.hard = 1.5, False
+    # else:                                    # 3.Rule 稀疏期
+    #     gamma, beta, lam = 20, 4, 5e-3
+    #     model.rule_layer.temp, model.rule_layer.hard = 1.0, True
 

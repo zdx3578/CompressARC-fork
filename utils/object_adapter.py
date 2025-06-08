@@ -2,6 +2,37 @@
 import numpy as np
 import torch
 from utils.objutil import all_pureobjects_from_grid
+
+# ANSI color codes for digits 0-9. These will be used to display
+# object pixels in different colors when debugging.
+_DIGIT_COLORS = [
+    "\033[30m",  # black
+    "\033[31m",  # red
+    "\033[32m",  # green
+    "\033[33m",  # yellow
+    "\033[34m",  # blue
+    "\033[35m",  # magenta
+    "\033[36m",  # cyan
+    "\033[37m",  # white
+    "\033[91m",  # bright red
+    "\033[92m",  # bright green
+]
+
+
+def _colored_digit(d: int) -> str:
+    """Return a colored string representation for digit ``d``."""
+    color = _DIGIT_COLORS[d % len(_DIGIT_COLORS)]
+    return f"{color}{d}\033[0m"
+
+
+def _print_mask_with_color(mask: np.ndarray, color: int, bbox: tuple | None = None) -> None:
+    """Print ``mask`` cropped to ``bbox`` using the provided ``color``."""
+    if bbox is not None:
+        r0, c0, r1, c1 = bbox
+        mask = mask[r0 : r1 + 1, c0 : c1 + 1]
+    for row in mask:
+        line = "".join(_colored_digit(color) if px else " " for px in row)
+        print(line)
 # try:
 #     from utils.objutil import all_pureobjects_from_grid  # external dependency
 # except ImportError:  # Fallback to a simple local implementation
@@ -78,6 +109,9 @@ def extract_objects_from_grid(grid,
         main_color = max((col for col, _ in obj), key=lambda col: sum(c == col for c, _ in obj))
         hole_cnt = _flood_fill_holes(mask)
 
+        print(f"[DEBUG] object {idx} color={main_color} holes={hole_cnt}")
+        _print_mask_with_color(mask, main_color, (min(bbox_r), min(bbox_c), max(bbox_r), max(bbox_c)))
+
         obj_dicts.append({
             "id": idx,
             "color": main_color,
@@ -100,6 +134,13 @@ def extract_objects_from_grid(grid,
     colors = [colors[i] for i in keep_idx]
     sizes  = [sizes[i] for i in keep_idx]
     holes  = [holes[i] for i in keep_idx]
+
+    for new_idx, old_idx in enumerate(keep_idx):
+        print(
+            f"[DEBUG] kept object {old_idx} -> idx {new_idx} color={colors[new_idx]} holes={holes[new_idx]}"
+        )
+        bbox = obj_dicts[new_idx]["bbox"]
+        _print_mask_with_color(mask_list[new_idx], colors[new_idx], bbox)
 
     for i in range(len(mask_list)):
         for j in range(i+1, len(mask_list)):
