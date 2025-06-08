@@ -52,7 +52,7 @@ def _print_mask_with_color(
         r0, c0, r1, c1 = bbox
         mask = mask[r0 : r1 + 1, c0 : c1 + 1]
     for row in mask:
-        line = "".join(_colored_digit(color) if px else "." for px in row)
+        line = "".join(_colored_digit(color) if px else " " for px in row)
         print(line)
 # try:
 #     from utils.objutil import all_pureobjects_from_grid  # external dependency

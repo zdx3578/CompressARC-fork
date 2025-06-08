@@ -39,45 +39,46 @@ def op_recolor_mask(canvas, mask, params, temp=1, hard=True):
     return canvas
 
 
-# ─── 示例算子 ──────────────────────────────────
-@register("fill_line")
-def op_fill_line(canvas, mask, params, temp=1, hard=True):
-    """
-    params[0]: color 0-9  (softmax 外部完成)
-    params[1]: axis 0=rows 1=cols (Gumbel-St)
-    """
-    color  = params[0].long().clamp(0,9)
-    axis   = (params[1] > 0).long()   # 0 or 1
-    indices = mask.nonzero(as_tuple=False)
-    if indices.numel()==0:
-        return canvas
-    if axis == 0:
-        canvas[:, indices[:,1]] = color
-    else:
-        canvas[indices[:,0]] = color
-    return canvas
 
-@register("draw_cross")
-def op_draw_cross(canvas, mask, params, temp=1, hard=True):
-    """
-    params[0]: color id 0‥9   （softmax、argmax 外部完成）
-    params[1]: width 0‥4
-    """
-    color = params[0].long().clamp(0, 9)
-    w     = params[1].long().clamp(0, 4)
+# # ─── 示例算子 ──────────────────────────────────
+# @register("fill_line")
+# def op_fill_line(canvas, mask, params, temp=1, hard=True):
+#     """
+#     params[0]: color 0-9  (softmax 外部完成)
+#     params[1]: axis 0=rows 1=cols (Gumbel-St)
+#     """
+#     color  = params[0].long().clamp(0,9)
+#     axis   = (params[1] > 0).long()   # 0 or 1
+#     indices = mask.nonzero(as_tuple=False)
+#     if indices.numel()==0:
+#         return canvas
+#     if axis == 0:
+#         canvas[:, indices[:,1]] = color
+#     else:
+#         canvas[indices[:,0]] = color
+#     return canvas
 
-    if mask.sum() == 0:
-        return canvas                        # 空掩码直接返回
+# @register("draw_cross")
+# def op_draw_cross(canvas, mask, params, temp=1, hard=True):
+#     """
+#     params[0]: color id 0‥9   （softmax、argmax 外部完成）
+#     params[1]: width 0‥4
+#     """
+#     color = params[0].long().clamp(0, 9)
+#     w     = params[1].long().clamp(0, 4)
 
-    # 取前景像素坐标，再求行、列平均 → 中心点
-    coords  = mask.nonzero(as_tuple=False)   # (N, 2)  [[r,c],...]
-    center  = coords.float().mean(dim=0).round().long()   # (2,)
-    cx, cy  = center.tolist()
+#     if mask.sum() == 0:
+#         return canvas                        # 空掩码直接返回
 
-    # 画十字：横竖宽度 w
-    canvas[max(cx-w, 0): cx+w+1, :] = color
-    canvas[:, max(cy-w, 0): cy+w+1] = color
-    return canvas
+#     # 取前景像素坐标，再求行、列平均 → 中心点
+#     coords  = mask.nonzero(as_tuple=False)   # (N, 2)  [[r,c],...]
+#     center  = coords.float().mean(dim=0).round().long()   # (2,)
+#     cx, cy  = center.tolist()
+
+#     # 画十字：横竖宽度 w
+#     canvas[max(cx-w, 0): cx+w+1, :] = color
+#     canvas[:, max(cy-w, 0): cy+w+1] = color
+#     return canvas
 
 
 # TODO: 更多算子
@@ -112,3 +113,12 @@ def op_noop4(canvas, mask, params, temp=1, hard=True):
     """什么也不做，占位算子"""
     return canvas
 
+@register("noop5")
+def op_noop5(canvas, mask, params, temp=1, hard=True):
+    """什么也不做，占位算子"""
+    return canvas
+
+@register("noop6")
+def op_noop6(canvas, mask, params, temp=1, hard=True):
+    """什么也不做，占位算子"""
+    return canvas

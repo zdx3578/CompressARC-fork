@@ -8,13 +8,14 @@ class SparseRuleLayer(nn.Module):
     输入: attr_tensor (N_obj, D) , obj_masks (N_obj,H,W)
     输出: patched_grid (H,W)
     """
-    def __init__(self, attr_dim, n_colors, K_ops=8,  temp=1.0):
+    def __init__(self, attr_dim, n_colors, K_ops=8, temp=1.0, selector_temp=None, hard=True):
         super().__init__()
         # self.K = K_ops
         self.attr_dim = attr_dim
-        self.temp = 0.3  #temp
+        self.temp = temp                     # temperature for operator params
+        self.selector_temp = selector_temp if selector_temp is not None else temp
+        self.hard = hard                     # hard sampling flag for gumbel-softmax
         self.n_params = n_colors
-        self.selector_temp = 0.3
 
         self.K = min(K_ops, len(OP_BANK))
         self.op_names = list(OP_BANK.keys())[:self.K]
@@ -42,8 +43,8 @@ class SparseRuleLayer(nn.Module):
         self.debug_buffer = []
 
         N = attr_tensor.size(0)
-        sel_logits = self.selector(attr_tensor) / 0.3 #self.temp      # (N,K)
-        sel_prob   = F.gumbel_softmax(sel_logits, tau=self.temp, hard=True)  # (N,K)
+        sel_logits = self.selector(attr_tensor) / self.selector_temp
+        sel_prob   = F.gumbel_softmax(sel_logits, tau=self.selector_temp, hard=self.hard)
 
         params_raw = 5 * self.param_head(attr_tensor)                # (N,K*P)
         # params_raw
