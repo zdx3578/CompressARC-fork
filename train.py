@@ -25,10 +25,9 @@ import sys
 
 debugstep = 40
 reconstrucstep = 300
-
 maxsteps = 3000
-
 learningrate = 1.1e-2
+# folder = task_name + '/'
 
 class AdaptiveProgressBar:
     """自适应更新频率的进度条类"""
@@ -527,10 +526,10 @@ def take_step(task, model, optimizer, scheduler, train_step, train_history_logge
         frac = (train_step - step1)/(step2)
         gamma = 40
         beta  = 4 + 8*frac          # →4
-        lam   = 1e-1 * frac  # →1e-3
+        lam   = 2+ 1 * frac  # →1e-3
         model.rule_layer.temp, model.rule_layer.hard = 1.5, False
     else:                                    # 3.Rule 稀疏期
-        gamma, beta, lam = 30, 5, 5e-1
+        gamma, beta, lam = 40, 15, 4
         model.rule_layer.temp, model.rule_layer.hard = 1.0, True
 
     # sparsity_penalty = lam * rule_layer.selector(task.output_attr_tensor[0]).abs().mean()
@@ -547,7 +546,7 @@ def take_step(task, model, optimizer, scheduler, train_step, train_history_logge
     # sparsity_penalty = lam * group_usage.abs().sum()
 
     loss = gamma*reconstruction_error + beta*total_KL + sparsity_penalty
-    loss += 0.01 * model.rule_layer.last_entropy
+    loss += 10 * model.rule_layer.last_entropy
 
 
 
@@ -559,7 +558,7 @@ def take_step(task, model, optimizer, scheduler, train_step, train_history_logge
 
     debug_train_predictions(
         task, logits, pred_idx, train_step,
-        folder=task_name + '/',  # 需要传入folder参数
+        folder = folder , #task_name + '/',  # 需要传入folder参数
         task_name=task_name,     # 需要传入task_name参数
         rule_layer=rule_layer,
         USE_RULE_LAYER=USE_RULE_LAYER
@@ -712,7 +711,7 @@ def take_step(task, model, optimizer, scheduler, train_step, train_history_logge
         loss.item(),
     )
 
-
+from datetime import datetime
 
 if __name__ == "__main__":
     # 解析命令行参数
@@ -738,7 +737,9 @@ if __name__ == "__main__":
     # tasks = preprocessing.preprocess_tasks(split, task_nums)
 
     task_name = args.task_name
-    folder = task_name + '/'
+    # folder = task_name + '/'
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    folder = f"{task_name}_{timestamp}/"
     print('Performing a training run on task', task_name,
           'and placing the results in', folder)
     os.makedirs(folder, exist_ok=True)
@@ -766,7 +767,7 @@ if __name__ == "__main__":
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer,
                 mode='min',
-                factor=0.99,
+                factor=0.996,
                 patience=20,
                 min_lr=1e-3,
                 # verbose=True
@@ -777,7 +778,7 @@ if __name__ == "__main__":
             scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer,
                 mode='min',
-                factor=0.99,
+                factor=0.996,
                 patience=20,
                 min_lr=1e-3,
                 # verbose=True
@@ -801,7 +802,7 @@ if __name__ == "__main__":
     # Get the solution hashes so that we can check for correctness
     true_solution_hashes = [task.solution_hash for task in tasks]
 
-    folder = task_name + '/'
+    # folder = task_name + '/'
 
     # Train the models one by one
     for i, (task, model, optimizer, scheduler, train_history_logger) in enumerate(zip(tasks, models, optimizers, schedulers, train_history_loggers)):
